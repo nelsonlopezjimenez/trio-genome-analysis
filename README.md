@@ -59,3 +59,7 @@ I'll refactor the script for chromosome-by-chromosome processing and show you ho
 4. Run the updated script!
 
 The chromosome-based approach will be much more memory-efficient and allow you to process the 1000 Genomes data effectively. Ready to start?
+
+## Important links
+
+1. https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/
