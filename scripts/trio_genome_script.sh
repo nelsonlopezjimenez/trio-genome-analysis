@@ -229,22 +229,35 @@ main() {
     
     # Check if required files exist
     [ ! -f "$REFERENCE" ] && echo "Error: Reference file $REFERENCE not found" && exit 1
-    [ ! -f "$VCF_FILE" ] && echo "Error: VCF file $VCF_FILE not found" && exit 1
+    [ ! -d "$VCF_DIR" ] && echo "Error: VCF directory $VCF_DIR not found" && exit 1
     [ ! -f "$GTF_FILE" ] && echo "Error: GTF file $GTF_FILE not found" && exit 1
     
     # Check if reference is indexed
     [ ! -f "${REFERENCE}.fai" ] && echo "Indexing reference genome..." && samtools faidx "$REFERENCE"
     
-    # Check if VCF is indexed
-    [ ! -f "${VCF_FILE}.tbi" ] && [ ! -f "${VCF_FILE}.csi" ] && echo "Indexing VCF file..." && bcftools index "$VCF_FILE"
+    # Check for at least one VCF file
+    vcf_count=$(find "$VCF_DIR" -name "*.vcf.gz" | wc -l)
+    if [ "$vcf_count" -eq 0 ]; then
+        echo "Error: No VCF files found in $VCF_DIR"
+        exit 1
+    fi
     
-    echo "All prerequisites met. Starting analysis..."
+    echo "Found $vcf_count VCF files. Starting analysis..."
     
-    # Generate genomes for all trio members
+    # Create log file
+    log_file="$OUTPUT_DIR/logs/analysis_$(date +%Y%m%d_%H%M%S).log"
+    exec 1> >(tee -a "$log_file")
+    exec 2> >(tee -a "$log_file" >&2)
+    
+    # Process all trio members
     for sample in "$CHILD" "$MOTHER" "$FATHER"; do
+        echo "=== Processing $sample ==="
+        
+        # Generate chromosome-specific sequences
         generate_genomes "$sample"
         
-        # Index the generated genomes
+        # Index the final genomes
+        echo "Indexing genomes for $sample..."
         samtools faidx "$OUTPUT_DIR/genomes/${sample}_hap1.fa"
         samtools faidx "$OUTPUT_DIR/genomes/${sample}_hap2.fa"
         
@@ -255,13 +268,32 @@ main() {
         # Compute hashes for both haplotypes
         compute_hashes "$sample" 1
         compute_hashes "$sample" 2
+        
+        echo "=== Completed $sample ==="
     done
+    
+    # Clean up temporary files (optional - comment out to keep intermediate files)
+    echo "Cleaning up temporary files..."
+    rm -rf "$OUTPUT_DIR/temp"
     
     # Create summary report
     create_summary
     
     echo "Analysis complete! Results saved in $OUTPUT_DIR/"
     echo "Check $OUTPUT_DIR/analysis_summary.txt for details."
+    echo "Log file: $log_file"
+}
+
+# Progress tracking function
+show_progress() {
+    local current=$1
+    local total=$2
+    local desc=$3
+    local percent=$((current * 100 / total))
+    printf "\r[%3d%%] %s (%d/%d)" "$percent" "$desc" "$current" "$total"
+    if [ "$current" -eq "$total" ]; then
+        echo ""
+    fi
 }
 
 # Run the script
