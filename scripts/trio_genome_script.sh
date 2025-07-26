@@ -25,26 +25,87 @@ CHROMOSOMES=("chr1" "chr2" "chr3" "chr4" "chr5" "chr6" "chr7" "chr8" "chr9" "chr
 # Create output directory structure
 mkdir -p "$OUTPUT_DIR"/{genomes,genes,hashes,temp,logs}
 
-echo "Starting trio genome analysis..."
+echo "Starting trio genome analysis with chromosome-by-chromosome processing..."
 
-# Function to generate genome sequences for one individual
+# Function to find VCF file for a chromosome
+find_vcf_file() {
+    local chr=$1
+    # Look for VCF files containing the chromosome name
+    local vcf_file=$(find "$VCF_DIR" -name "*${chr}*.vcf.gz" | head -1)
+    
+    if [ -z "$vcf_file" ]; then
+        echo "Warning: No VCF file found for $chr in $VCF_DIR"
+        return 1
+    fi
+    
+    echo "$vcf_file"
+}
+
+# Function to generate chromosome-specific sequences
+generate_chr_sequences() {
+    local sample=$1
+    local chr=$2
+    local vcf_file=$3
+    
+    echo "Processing $chr for $sample..."
+    
+    # Create temporary chromosome-specific reference
+    samtools faidx "$REFERENCE" "$chr" > "$OUTPUT_DIR/temp/${chr}_ref.fa"
+    samtools faidx "$OUTPUT_DIR/temp/${chr}_ref.fa"
+    
+    # Generate haplotype 1 for this chromosome
+    bcftools consensus \
+        --sample "$sample" \
+        --haplotype 1 \
+        --fasta-ref "$OUTPUT_DIR/temp/${chr}_ref.fa" \
+        "$vcf_file" > "$OUTPUT_DIR/temp/${sample}_${chr}_hap1.fa"
+    
+    # Generate haplotype 2 for this chromosome
+    bcftools consensus \
+        --sample "$sample" \
+        --haplotype 2 \
+        --fasta-ref "$OUTPUT_DIR/temp/${chr}_ref.fa" \
+        "$vcf_file" > "$OUTPUT_DIR/temp/${sample}_${chr}_hap2.fa"
+}
+
+# Function to concatenate all chromosomes into full genome
+concatenate_genome() {
+    local sample=$1
+    local haplotype=$2
+    
+    echo "Concatenating chromosomes for ${sample}_hap${haplotype}..."
+    
+    # Start with empty file
+    > "$OUTPUT_DIR/genomes/${sample}_hap${haplotype}.fa"
+    
+    # Concatenate all chromosomes
+    for chr in "${CHROMOSOMES[@]}"; do
+        if [ -f "$OUTPUT_DIR/temp/${sample}_${chr}_hap${haplotype}.fa" ]; then
+            cat "$OUTPUT_DIR/temp/${sample}_${chr}_hap${haplotype}.fa" >> "$OUTPUT_DIR/genomes/${sample}_hap${haplotype}.fa"
+        else
+            echo "Warning: Missing $chr for ${sample}_hap${haplotype}"
+        fi
+    done
+    
+    echo "Completed genome concatenation for ${sample}_hap${haplotype}"
+}
+
+# Function to generate complete genome for one individual
 generate_genomes() {
     local sample=$1
     echo "Generating genome sequences for $sample..."
     
-    # Generate haplotype 1
-    bcftools consensus \
-        --sample "$sample" \
-        --haplotype 1 \
-        --fasta-ref "$REFERENCE" \
-        "$VCF_FILE" > "$OUTPUT_DIR/genomes/${sample}_hap1.fa"
+    # Process each chromosome
+    for chr in "${CHROMOSOMES[@]}"; do
+        vcf_file=$(find_vcf_file "$chr")
+        if [ $? -eq 0 ]; then
+            generate_chr_sequences "$sample" "$chr" "$vcf_file"
+        fi
+    done
     
-    # Generate haplotype 2
-    bcftools consensus \
-        --sample "$sample" \
-        --haplotype 2 \
-        --fasta-ref "$REFERENCE" \
-        "$VCF_FILE" > "$OUTPUT_DIR/genomes/${sample}_hap2.fa"
+    # Concatenate chromosomes into full genomes
+    concatenate_genome "$sample" 1
+    concatenate_genome "$sample" 2
     
     echo "Completed genome generation for $sample"
 }
