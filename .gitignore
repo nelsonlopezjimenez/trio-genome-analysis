@@ -29,4 +29,7 @@ Thumbs.db
 # But keep example/small files
 !data/examples/*.fa
 !data/examples/*.vcf
-EOF
+
+
+# mine
+*.gz
