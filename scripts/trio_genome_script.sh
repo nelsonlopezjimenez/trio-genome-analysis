@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# Trio Genome Analysis Script
+# Trio Genome Analysis Script - Chromosome-by-Chromosome Processing
 # Generates full genome sequences, extracts genes, and computes SHA256 hashes
+# Version 2.0 - Chromosome-based processing for 1000 Genomes data
 
 set -e  # Exit on any error
 
 # Configuration
 REFERENCE="GRCh38.fa"
-VCF_FILE="trio.vcf.gz"
+VCF_DIR="vcf_files"  # Directory containing chromosome VCF files
 GTF_FILE="gencode.gtf"  # Gene annotation file
 OUTPUT_DIR="trio_analysis"
 
@@ -16,8 +17,13 @@ CHILD="NA12878"
 MOTHER="NA12891"
 FATHER="NA12892"
 
-# Create output directory
-mkdir -p "$OUTPUT_DIR"/{genomes,genes,hashes}
+# Chromosomes to process
+CHROMOSOMES=("chr1" "chr2" "chr3" "chr4" "chr5" "chr6" "chr7" "chr8" "chr9" "chr10" 
+            "chr11" "chr12" "chr13" "chr14" "chr15" "chr16" "chr17" "chr18" "chr19" 
+            "chr20" "chr21" "chr22" "chrX" "chrY")
+
+# Create output directory structure
+mkdir -p "$OUTPUT_DIR"/{genomes,genes,hashes,temp,logs}
 
 echo "Starting trio genome analysis..."
 
