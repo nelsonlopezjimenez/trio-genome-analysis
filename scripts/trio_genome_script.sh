@@ -110,20 +110,21 @@ generate_genomes() {
     echo "Completed genome generation for $sample"
 }
 
-# Function to extract gene sequences
-extract_genes() {
+# Function to extract gene sequences for a specific chromosome
+extract_chr_genes() {
     local sample=$1
     local haplotype=$2
+    local chr=$3
     
-    echo "Extracting genes for ${sample}_hap${haplotype}..."
+    echo "Extracting genes from $chr for ${sample}_hap${haplotype}..."
     
     # Create gene directory for this sample/haplotype
     mkdir -p "$OUTPUT_DIR/genes/${sample}_hap${haplotype}"
     
-    # Extract gene coordinates from GTF and get sequences
-    awk '$3=="gene"' "$GTF_FILE" | while read line; do
+    # Extract gene coordinates from GTF for this chromosome
+    awk -v chr="$chr" '$1==chr && $3=="gene"' "$GTF_FILE" | while read line; do
         # Parse GTF line
-        chr=$(echo "$line" | cut -f1)
+        chr_name=$(echo "$line" | cut -f1)
         start=$(echo "$line" | cut -f4)
         end=$(echo "$line" | cut -f5)
         
@@ -134,12 +135,37 @@ extract_genes() {
         # Skip if essential info is missing
         [ -z "$gene_id" ] && continue
         
-        # Extract sequence using samtools faidx
-        samtools faidx "$OUTPUT_DIR/genomes/${sample}_hap${haplotype}.fa" \
-            "${chr}:${start}-${end}" > "$OUTPUT_DIR/genes/${sample}_hap${haplotype}/${gene_name}_${gene_id}.fa" 2>/dev/null || continue
+        # Check if we have a chromosome file for this sample/haplotype
+        chr_file="$OUTPUT_DIR/temp/${sample}_${chr}_hap${haplotype}.fa"
+        if [ ! -f "$chr_file" ]; then
+            continue
+        fi
         
-        echo "Extracted gene: $gene_name ($gene_id)"
+        # Extract sequence using samtools faidx
+        samtools faidx "$chr_file" "${chr_name}:${start}-${end}" > \
+            "$OUTPUT_DIR/genes/${sample}_hap${haplotype}/${gene_name}_${gene_id}_${chr}.fa" 2>/dev/null || continue
+        
+        echo "  Extracted gene: $gene_name ($gene_id) from $chr"
     done
+}
+
+# Function to extract gene sequences
+extract_genes() {
+    local sample=$1
+    local haplotype=$2
+    
+    echo "Extracting genes for ${sample}_hap${haplotype}..."
+    
+    # Process each chromosome
+    for chr in "${CHROMOSOMES[@]}"; do
+        if [ -f "$OUTPUT_DIR/temp/${sample}_${chr}_hap${haplotype}.fa" ]; then
+            # Index the chromosome file
+            samtools faidx "$OUTPUT_DIR/temp/${sample}_${chr}_hap${haplotype}.fa"
+            extract_chr_genes "$sample" "$haplotype" "$chr"
+        fi
+    done
+    
+    echo "Completed gene extraction for ${sample}_hap${haplotype}"
 }
 
 # Function to compute SHA256 hashes
