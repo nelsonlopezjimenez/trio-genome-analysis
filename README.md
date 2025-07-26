@@ -63,3 +63,52 @@ The chromosome-based approach will be much more memory-efficient and allow you t
 ## Important links
 
 1. https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/
+1. size of vcf.gz files
+```sh
+localepsilon@cis0768 MINGW64 /c/Users/Public/my-express/public/2025/week29.3
+$ curl -I "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr20.recalibrated_variants.vcf.gz"
+Last-Modified: Fri, 30 Oct 2020 18:53:34 GMT
+Content-Length: 41347545136
+Accept-ranges: bytes
+
+localepsilon@cis0768 MINGW64 /c/Users/Public/my-express/public/2025/week29.3
+$ curl -I "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz"
+Last-Modified: Fri, 30 Oct 2020 20:15:10 GMT
+Content-Length: 27944653807
+Accept-ranges: bytes
+```
+1. Pasted the output to claude:
+1. ## this is the explanation
+```
+Wow! That's 27.9 GB compressed for just chromosome 22! This is much larger than I estimated. Let me break this down:
+Your chr22 result:
+
+Compressed size: 27.9 GB
+Estimated uncompressed: ~280-300 GB (10x expansion)
+Chr22: One of the smallest autosomes!
+
+Revised estimates for all chromosomes:
+If chr22 (smallest) is 28GB, then:
+
+chr1 (largest): ~80-100 GB compressed
+Medium chrs: ~40-60 GB each
+Total dataset: ~1.5-2 TB compressed!
+
+Why so large:
+
+3,202 samples (vs 2,504 in older data)
+High-coverage 30x = more variants detected
+Full genotype information for every sample
+Phased haplotypes = additional data
+
+Storage implications:
+You'll need massive storage:
+
+Single chromosome: ~30-100 GB compressed
+Processing space: ~10x more when uncompressed
+Results: Additional space for generated genomes
+
+This is enterprise-scale genomics data! You might want to:
+
+Start with just chr22 for testing
+```
