@@ -1,0 +1,4 @@
+filename	source_url	release	download_date	md5	md5_verified
+gencode.v46.basic.annotation.gtf.gz	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.basic.annotation.gtf.gz	GENCODE v46	2026-07-02	9d4f206f82756340967a79a96db5bea6	true
+gencode.v46.pc_transcripts.fa.gz	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.pc_transcripts.fa.gz	GENCODE v46	2026-07-02	97610ed2e92efbdf222aea3282f4cda8	true
+gencode.v46.pc_translations.fa.gz	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.pc_translations.fa.gz	GENCODE v46	2026-07-02	9f4de2ee851428d052664abd34d8cef6	true
