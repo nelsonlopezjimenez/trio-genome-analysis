@@ -27,6 +27,28 @@ older v3.0 gene-level SHA256 pipeline (`scripts/trio_analysis.sh`), which this f
   only the child needs to be phased, since presence/absence of an allele at a site doesn't require
   knowing which parental chromosome copy it's on.
 
+### Environment migration: WSL2 (Windows) → native macOS
+- Development moved off the Windows/WSL2 machine onto two Macs (Mac mini, MacBook "Neo", both Apple
+  Silicon) for the remainder of the POC. Native macOS gives Homebrew access to samtools/bcftools/bgzip/
+  tabix/blast directly (no VM layer needed, unlike the Windows setup that required WSL2 for these).
+- Added `scripts/setup_macos.sh` — idempotent Homebrew-based installer: `samtools`, `bcftools`, `htslib`
+  (`bgzip`/`tabix`), `blast` (`dustmasker`/`segmasker`), `python@3.12`; creates a venv at
+  `~/venvs/trio-genome` (`jupyter`, `ipykernel`, `pyfaidx`, `biopython`); registers Jupyter kernel
+  `trio-genome-macos` ("Python (trio-genome, macOS)"). Same script runs on both Macs.
+- **Gotcha found:** `mash` has no `homebrew-core` formula (it only ever lived in the now-archived
+  `brewsci/bio` tap). Worked around by having the script pull the upstream `v2.3` `OSX64` release binary
+  straight from GitHub into `~/bin/mash` and run it under Rosetta 2 (no arm64 build exists upstream).
+  Script checks for Rosetta first and skips with an explicit message (`softwareupdate --install-rosetta`)
+  if it's missing, rather than failing silently.
+- **MacBook Neo:** fully set up and verified 2026-08-17 — `samtools` 1.24, `bcftools` 1.24, `htslib` 1.24,
+  `blast` 2.17.0, `mash` 2.3 (Intel binary via Rosetta), Python 3.12.14 venv, kernel `trio-genome-macos`.
+  Smoke-tested: `scripts/gencode_cds_extract.py` imports and translates correctly under the new venv.
+- **Mac mini:** not yet set up as of this entry — see [`macos-setup-handoff.md`](macos-setup-handoff.md)
+  for the exact steps to resume there.
+- Reminder for whichever machine runs the notebooks next: `data/reference/`, `data/giab/`, and
+  `data/derived/` are all gitignored, so a fresh clone has none of the actual downloaded/derived data —
+  re-download per the manifests before expecting notebooks 01–04 to reproduce prior results.
+
 ### Added
 - `notebooks/01_hash_functions.ipynb` — defines and verifies `normalize_protein`, `md5_digest`,
   `ga4gh_sq_digest` against a corrected worked example.
