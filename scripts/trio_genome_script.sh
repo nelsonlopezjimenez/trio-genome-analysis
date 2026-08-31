@@ -9,8 +9,9 @@ set -e  # Exit on any error
 # Configuration
 REFERENCE="GRCh38.fa"
 VCF_DIR="vcf_files"  # Directory containing chromosome VCF files
-GTF_FILE="gencode.gtf"  # Gene annotation file
+GTF_FILE="gencode.v46.basic.annotation.gtf"  # Gene annotation file
 OUTPUT_DIR="trio_analysis"
+PROTEIN_CODING_ONLY=true  # Set to true to process only protein-coding genes
 
 # Sample IDs (adjust these to match your trio)
 CHILD="NA12878"
@@ -25,9 +26,39 @@ CHROMOSOMES=("chr1" "chr2" "chr3" "chr4" "chr5" "chr6" "chr7" "chr8" "chr9" "chr
 # Create output directory structure
 mkdir -p "$OUTPUT_DIR"/{genomes,genes,hashes,temp,logs}
 
-echo "Starting trio genome analysis with chromosome-by-chromosome processing..."
+# Function to create filtered GTF for protein-coding genes only
+create_protein_coding_gtf() {
+    echo "Creating protein-coding gene filter..."
+    
+    local filtered_gtf="$OUTPUT_DIR/protein_coding_genes.gtf"
+    
+    if [ "$PROTEIN_CODING_ONLY" = true ]; then
+        # Extract only protein-coding genes from the original GTF
+        if [ ! -f "$filtered_gtf" ]; then
+            echo "Filtering GTF for protein-coding genes only..."
+            grep 'gene_type "protein_coding"' "$GTF_FILE" | grep -w 'gene' > "$filtered_gtf"
+            
+            local total_genes=$(grep -w 'gene' "$GTF_FILE" | wc -l)
+            local protein_genes=$(wc -l < "$filtered_gtf")
+            
+            echo "Filtered from $total_genes total genes to $protein_genes protein-coding genes"
+            echo "Reduction: $(echo "scale=1; (1 - $protein_genes/$total_genes) * 100" | bc -l)%"
+        else
+            echo "Using existing protein-coding GTF: $filtered_gtf"
+        fi
+        
+        # Update GTF_FILE to point to filtered version
+        GTF_FILE="$filtered_gtf"
+    else
+        echo "Using all genes from original GTF"
+    fi
+}
 
-# Function to find VCF file for a chromosome
+echo "Starting trio genome analysis with chromosome-by-chromosome processing..."
+echo "Focus: Protein-coding genes only = $PROTEIN_CODING_ONLY"
+
+# Create protein-coding gene filter if needed
+create_protein_coding_gtf
 find_vcf_file() {
     local chr=$1
     # Look for VCF files containing the chromosome name
@@ -110,16 +141,28 @@ generate_genomes() {
     echo "Completed genome generation for $sample"
 }
 
-# Function to extract gene sequences for a specific chromosome
+# Function to extract gene sequences for a specific chromosome (protein-coding optimized)
 extract_chr_genes() {
     local sample=$1
     local haplotype=$2
     local chr=$3
     
-    echo "Extracting genes from $chr for ${sample}_hap${haplotype}..."
+    echo "Extracting protein-coding genes from $chr for ${sample}_hap${haplotype}..."
     
     # Create gene directory for this sample/haplotype
     mkdir -p "$OUTPUT_DIR/genes/${sample}_hap${haplotype}"
+    
+    # Count genes to process for this chromosome
+    local gene_count=$(awk -v chr="$chr" '$1==chr && $3=="gene"' "$GTF_FILE" | wc -l)
+    
+    if [ "$gene_count" -eq 0 ]; then
+        echo "  No protein-coding genes found on $chr"
+        return
+    fi
+    
+    echo "  Processing $gene_count protein-coding genes on $chr..."
+    
+    local processed=0
     
     # Extract gene coordinates from GTF for this chromosome
     awk -v chr="$chr" '$1==chr && $3=="gene"' "$GTF_FILE" | while read line; do
@@ -127,10 +170,12 @@ extract_chr_genes() {
         chr_name=$(echo "$line" | cut -f1)
         start=$(echo "$line" | cut -f4)
         end=$(echo "$line" | cut -f5)
+        strand=$(echo "$line" | cut -f7)
         
-        # Extract gene_id and gene_name from attributes
+        # Extract gene_id, gene_name, and gene_type from attributes
         gene_id=$(echo "$line" | grep -o 'gene_id "[^"]*"' | cut -d'"' -f2)
         gene_name=$(echo "$line" | grep -o 'gene_name "[^"]*"' | cut -d'"' -f2 2>/dev/null || echo "$gene_id")
+        gene_type=$(echo "$line" | grep -o 'gene_type "[^"]*"' | cut -d'"' -f2 2>/dev/null || echo "unknown")
         
         # Skip if essential info is missing
         [ -z "$gene_id" ] && continue
@@ -141,12 +186,24 @@ extract_chr_genes() {
             continue
         fi
         
-        # Extract sequence using samtools faidx
-        samtools faidx "$chr_file" "${chr_name}:${start}-${end}" > \
-            "$OUTPUT_DIR/genes/${sample}_hap${haplotype}/${gene_name}_${gene_id}_${chr}.fa" 2>/dev/null || continue
+        # Create descriptive filename with gene type
+        output_file="$OUTPUT_DIR/genes/${sample}_hap${haplotype}/${gene_name}_${gene_id}_${gene_type}_${chr}.fa"
         
-        echo "  Extracted gene: $gene_name ($gene_id) from $chr"
+        # Extract sequence using samtools faidx
+        if samtools faidx "$chr_file" "${chr_name}:${start}-${end}" > "$output_file" 2>/dev/null; then
+            # Add gene information to FASTA header
+            sed -i "1s/.*/>gene_name:${gene_name}|gene_id:${gene_id}|gene_type:${gene_type}|chr:${chr}|strand:${strand}|${chr_name}:${start}-${end}/" "$output_file"
+            
+            processed=$((processed + 1))
+            if [ $((processed % 100)) -eq 0 ]; then
+                echo "    Processed $processed/$gene_count genes on $chr"
+            fi
+        else
+            rm -f "$output_file"
+        fi
     done
+    
+    echo "  Completed: $processed protein-coding genes extracted from $chr"
 }
 
 # Function to extract gene sequences
@@ -196,31 +253,63 @@ compute_hashes() {
     echo "Hash computation completed for ${sample}_hap${haplotype}"
 }
 
-# Function to create summary report
+# Function to create summary report with protein-coding focus
 create_summary() {
     echo "Creating analysis summary..."
     
     summary_file="$OUTPUT_DIR/analysis_summary.txt"
-    echo "Trio Genome Analysis Summary" > "$summary_file"
-    echo "============================" >> "$summary_file"
+    echo "Trio Genome Analysis Summary - Protein-Coding Genes Focus" > "$summary_file"
+    echo "=======================================================" >> "$summary_file"
     echo "Analysis date: $(date)" >> "$summary_file"
+    echo "Protein-coding only: $PROTEIN_CODING_ONLY" >> "$summary_file"
     echo "" >> "$summary_file"
     
+    if [ "$PROTEIN_CODING_ONLY" = true ]; then
+        echo "Gene filtering statistics:" >> "$summary_file"
+        local total_genes=$(grep -w 'gene' "$OUTPUT_DIR/../gencode.v46.basic.annotation.gtf" 2>/dev/null | wc -l || echo "unknown")
+        local protein_genes=$(wc -l < "$OUTPUT_DIR/protein_coding_genes.gtf" 2>/dev/null || echo "unknown")
+        echo "  Total genes in GTF: $total_genes" >> "$summary_file"
+        echo "  Protein-coding genes: $protein_genes" >> "$summary_file"
+        if [ "$total_genes" != "unknown" ] && [ "$protein_genes" != "unknown" ]; then
+            local reduction=$(echo "scale=1; (1 - $protein_genes/$total_genes) * 100" | bc -l 2>/dev/null || echo "unknown")
+            echo "  Data reduction: ${reduction}%" >> "$summary_file"
+        fi
+        echo "" >> "$summary_file"
+    fi
+    
     echo "Generated genome files:" >> "$summary_file"
-    ls -lh "$OUTPUT_DIR/genomes"/*.fa >> "$summary_file"
+    ls -lh "$OUTPUT_DIR/genomes"/*.fa 2>/dev/null >> "$summary_file" || echo "  No genome files found" >> "$summary_file"
     echo "" >> "$summary_file"
     
     echo "Gene extraction statistics:" >> "$summary_file"
     for sample in "$CHILD" "$MOTHER" "$FATHER"; do
         for hap in 1 2; do
-            gene_count=$(ls "$OUTPUT_DIR/genes/${sample}_hap${hap}"/*.fa 2>/dev/null | wc -l)
-            echo "  ${sample}_hap${hap}: $gene_count genes extracted" >> "$summary_file"
+            if [ -d "$OUTPUT_DIR/genes/${sample}_hap${hap}" ]; then
+                gene_count=$(ls "$OUTPUT_DIR/genes/${sample}_hap${hap}"/*.fa 2>/dev/null | wc -l)
+                echo "  ${sample}_hap${hap}: $gene_count protein-coding genes extracted" >> "$summary_file"
+                
+                # Show breakdown by gene type if available
+                if [ "$gene_count" -gt 0 ]; then
+                    echo "    Gene types:" >> "$summary_file"
+                    ls "$OUTPUT_DIR/genes/${sample}_hap${hap}"/*_protein_coding_*.fa 2>/dev/null | wc -l | \
+                        xargs -I {} echo "      protein_coding: {}" >> "$summary_file"
+                fi
+            else
+                echo "  ${sample}_hap${hap}: No gene directory found" >> "$summary_file"
+            fi
         done
     done
     echo "" >> "$summary_file"
     
     echo "Hash files generated:" >> "$summary_file"
-    ls -lh "$OUTPUT_DIR/hashes"/*.txt >> "$summary_file"
+    ls -lh "$OUTPUT_DIR/hashes"/*.txt 2>/dev/null >> "$summary_file" || echo "  No hash files found" >> "$summary_file"
+    echo "" >> "$summary_file"
+    
+    echo "Storage usage:" >> "$summary_file"
+    du -sh "$OUTPUT_DIR" >> "$summary_file"
+    echo "" >> "$summary_file"
+    
+    echo "Processing completed successfully!" >> "$summary_file"
 }
 
 # Main execution
@@ -242,7 +331,13 @@ main() {
         exit 1
     fi
     
-    echo "Found $vcf_count VCF files. Starting analysis..."
+    # Check for basic calculator (bc) for statistics
+    if ! command -v bc &> /dev/null; then
+        echo "Warning: bc calculator not found. Some statistics will be unavailable."
+    fi
+    
+    # Create protein-coding gene filter
+    create_protein_coding_gtf
     
     # Create log file
     log_file="$OUTPUT_DIR/logs/analysis_$(date +%Y%m%d_%H%M%S).log"
