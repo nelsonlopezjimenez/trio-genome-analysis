@@ -1,6 +1,7 @@
 # Trio Genome Analysis Project
 
-> Current state: see [HANDOFF.md](HANDOFF.md) · History: see [CHANGELOG.md](CHANGELOG.md)
+> Returning after a break? Start with [PROJECT_MAP.md](PROJECT_MAP.md) · Current state: see
+> [HANDOFF.md](HANDOFF.md) · History: see [CHANGELOG.md](CHANGELOG.md)
 
 ## Sequence-Hashing POC (chr22, CDS-anchored) — in progress
 

@@ -70,6 +70,23 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   - Confirmed via repo-wide search: no remaining references anywhere to any of the retired
     files, and no other stale `scripts/trio_analysis.sh` mentions outside this file's own
     historical entries (which correctly describe what existed at the time).
+- **Root cause clarified for the plain-text-FASTA-instead-of-bgzip decision.** Previously
+  documented only as "the Windows dev machine had neither `samtools` nor `bgzip`" — true, but
+  incomplete. The fuller story (from direct recollection): VS Code on that machine had briefly
+  auto-linked to a WSL-hosted Python interpreter/kernel, so WSL tools looked reachable at first,
+  then the link broke — a known failure mode of picking a WSL interpreter path from
+  Windows-native VS Code without the Remote-WSL extension actually mediating the connection,
+  which leaves shell/`%%bash` subprocess calls resolving against the wrong PATH even while the
+  Python kernel itself still runs. Recorded in `HANDOFF.md`'s Storage section, along with the
+  recommendation (Remote-WSL, project files on the WSL filesystem) for if a Windows/WSL machine
+  is ever used for this project again — moot on the current native-macOS setup, but worth having
+  the accurate history. Also recorded there: an evaluated (not yet acted on) bgzip+`samtools
+  faidx` vs. plain-text+`pyfaidx` tradeoff for the FASTA blob store, concluding it's not worth
+  switching at chr22 scope.
+- Added `PROJECT_MAP.md` (root) — a short, diagram-heavy orientation doc distinct from
+  `HANDOFF.md` (detailed current state) and this file (full dated history): a project-evolution
+  timeline and a data-flow diagram, meant to be read first after any break to reload the mental
+  model before diving into the detail files. Linked from `README.md`.
 
 ## 2026-08-30 — Consolidated handoff docs; script cleanup
 

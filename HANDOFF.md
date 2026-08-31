@@ -191,9 +191,38 @@ exon-exon junction; only the whole spliced CDS is guaranteed to be a multiple of
 ### Storage
 - Raw downloads: read-only, gzipped as-downloaded, + `manifest.tsv` (source URL, release, date,
   MD5) — see `data/reference/manifest.tsv`, `data/giab/manifest.tsv`.
-- Working FASTA: `pyfaidx`-indexed (plain-text, not bgzip — chosen originally because the
-  Windows dev machine had neither `samtools` nor `bgzip` natively; revisit now that both Macs
-  have Homebrew `samtools`).
+- Working FASTA: `pyfaidx`-indexed (plain-text, not bgzip). Chosen originally because the
+  Windows dev machine had neither `samtools` nor `bgzip` natively — but the fuller root cause
+  (clarified 2026-08-31, from direct recollection, not previously documented): VS Code on that
+  machine had briefly auto-linked to a WSL-hosted Python interpreter/kernel early on, so it
+  looked briefly like WSL tools were reachable, then stopped working when that implicit link
+  broke — a known failure mode of picking a WSL interpreter path (`\\wsl$\...`) from
+  Windows-native VS Code without the actual **Remote-WSL** extension mediating the connection.
+  In that half-connected state the Python kernel can still run, but shell/`%%bash` subprocess
+  calls resolve against the wrong PATH, so WSL-only binaries like `samtools`/`bcftools` become
+  invisible even though "the kernel" nominally still works — plain Python (pyfaidx, no
+  subprocess calls) was what kept working regardless. **Recommendation if a Windows/WSL machine
+  is ever used for this project again:** use the Remote-WSL extension properly (`code .` from a
+  WSL terminal, or "Reopen in WSL"), which runs the whole dev environment as one persistent
+  process inside WSL instead of an opportunistic cross-boundary link — and keep project files on
+  the WSL filesystem (`~/...`), not `/mnt/c/...`, since that's the main performance cost of that
+  approach. Moot on the current native-macOS setup (no Windows/WSL boundary exists), but
+  documented here since it's the real reason this workaround exists, not just "no samtools
+  installed." Revisit the plain-text choice itself now that both Macs have Homebrew `samtools`/
+  `bgzip` natively — see the bgzip-vs-pyfaidx tradeoff note below.
+- **bgzip+`samtools faidx` vs. the current plain-text+`pyfaidx` blob store — not yet switched,
+  evaluated 2026-08-31.** Advantages of switching: ~4x disk savings via BGZF (compressed, but
+  keeps random access, unlike plain gzip) — negligible at chr22 scope, real at whole-genome/
+  many-individual scale; consistency with the rest of the pipeline (raw downloads and VCFs are
+  already gzip/bgzip-family, handled via `samtools`/`bcftools` — the derived blob store is
+  currently the one place bypassing those tools for a bespoke Python writer); matches the
+  original design intent (bgzip+samtools was the original spec; plain-text was purely the
+  Windows-workaround above, which no longer applies); and it's the native input format for
+  `bcftools consensus`, likely needed for personalized whole-genome FASTAs later. Advantages of
+  keeping plain-text/pyfaidx: zero subprocess dependency (pure Python, nothing to go missing
+  across machines), trivially greppable/diffable. **Verdict:** not worth switching for chr22-
+  scope work — revisit specifically when/if this scales past a single chromosome or starts
+  generating personalized whole-genome FASTAs.
 - Hash catalog: SQLite, one row per sequence: `hash_md5, hash_sq, seq_type(AA|CDS|cDNA|exon),
   accession, gene_id, source, release, evidence, length, low_complexity_frac`. Indexed on
   `hash_*` and `gene_id`. Sequence bytes are not duplicated — FASTA is the blob store, retrieved
