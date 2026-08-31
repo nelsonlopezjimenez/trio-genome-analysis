@@ -3,7 +3,7 @@ single chromosome of a GENCODE release. Promoted from notebooks/02_cds_extractio
 once the extraction logic was validated (1341/1398 chr22 transcripts, 0 unexplained
 exclusions -- see that notebook for the derivation and worked example).
 
-Anchors on CDS, not gene genomic span, per seq-hashing-project-handoff.md.
+Anchors on CDS, not gene genomic span, per HANDOFF.md.
 """
 
 import base64

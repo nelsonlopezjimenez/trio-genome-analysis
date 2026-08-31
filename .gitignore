@@ -32,5 +32,9 @@ Thumbs.db
 !data/examples/*.vcf
 
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
 # mine
 *.gz

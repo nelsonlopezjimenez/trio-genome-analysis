@@ -98,8 +98,8 @@ jupyter kernelspec uninstall <name>   # remove a stale/duplicate kernel if neede
 ## Why Homebrew, not conda, for this project
 
 Homebrew is already installed on this machine (it's what runs Docker/Tailscale), so "install
-Homebrew" from `macos-setup-handoff.md` step 1 is already done here — nothing new to set up for
-that. The genomics tools (`samtools`/`bcftools`/`htslib`/`blast`) get installed as a few more brew
+Homebrew" from `HANDOFF.md`'s new-machine setup steps is already done here — nothing new to set
+up for that. The genomics tools (`samtools`/`bcftools`/`htslib`/`blast`) get installed as a few more brew
 formulae on top of that existing install; `mash` is the one exception (upstream binary, no brew
 formula — see above).
 

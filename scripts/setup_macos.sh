@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time macOS environment setup for the sequence-hashing POC
-# (seq-hashing-project-handoff.md). Run on each machine (Mac mini, MacBook).
+# (HANDOFF.md). Run on each machine (Mac mini, MacBook).
 #
 # Prerequisite: Homebrew must already be installed (requires an interactive
 # sudo password, so it isn't done by this script):

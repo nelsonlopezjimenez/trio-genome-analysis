@@ -1,12 +1,14 @@
 # Trio Genome Analysis Project
 
+> Current state: see [HANDOFF.md](HANDOFF.md) · History: see [CHANGELOG.md](CHANGELOG.md)
+
 ## Sequence-Hashing POC (chr22, CDS-anchored) — in progress
 
 A second, newer effort in this repo, separate from the v3.0 gene-level pipeline described below.
-Full design rationale lives in [`seq-hashing-project-handoff.md`](seq-hashing-project-handoff.md);
-day-to-day work happens in [`notebooks/`](notebooks/). See [`CHANGELOG.md`](CHANGELOG.md) for the
-complete, detailed log. Setting up a new machine? See
-[`macos-setup-handoff.md`](macos-setup-handoff.md) (run [`scripts/setup_macos.sh`](scripts/setup_macos.sh)).
+Full design rationale, environment setup, and current status live in
+[`HANDOFF.md`](HANDOFF.md); day-to-day work happens in [`notebooks/`](notebooks/). See
+[`CHANGELOG.md`](CHANGELOG.md) for the complete, dated history
+(run [`scripts/setup_macos.sh`](scripts/setup_macos.sh) to set up a new machine).
 
 **Goal:** hash reference + trio (GIAB HG002/HG003/HG004) protein and CDS sequences on chr22 to (1)
 demonstrate parent-of-origin inheritance via exact-match hashing and (2) explore population distance
