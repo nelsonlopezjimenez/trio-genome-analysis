@@ -9,6 +9,29 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-08-31 — Retired v3_commit_guide.md; README's v1→v3 section brought current
+
+- `v3_commit_guide.md` (root, untouched since 2025-07-26) removed (`git rm`). It was a one-time
+  release playbook for the v3.0 commit — a `cat > README.md`/`cat > docs/data_sources.md`
+  heredoc script plus commit/tag instructions — not living documentation. Confirmed nothing in
+  it was unique: its outputs already exist as `README.md` and `docs/data_sources.md` (both
+  produced by literally running it on 2025-07-26), its version-history and performance figures
+  are already in this file's 2025-07-26 entry, and its planned `docs/performance_comparison.md`
+  was never actually created — further sign it was a half-executed scaffold, not a reference.
+- `README.md`'s v1→v3 pipeline section was stale and incomplete (the old heredoc's `cat`
+  truncated partway through "Quick Start," and the Directory Structure block still named
+  `scripts/trio_analysis.sh`, which no longer exists — consolidated into
+  `scripts/trio_genome_script.sh` on 2026-08-30). Rewritten against the actual current script
+  (read in full to confirm): correct filename, correct config variables
+  (`REFERENCE`/`VCF_DIR`/`GTF_FILE`/`PROTEIN_CODING_ONLY`/`CHILD`/`MOTHER`/`FATHER`), correct
+  output layout (`trio_analysis/{genomes,genes,hashes}/`, `analysis_summary.txt`). Trimmed the
+  duplicated version-history/citation/support boilerplate in favor of pointing at this file and
+  `docs/data_sources.md`, consistent with the single-source-of-truth pattern from the
+  2026-08-30 consolidation.
+- Noted but not acted on: `scripts/README.md` and `claude-out.sh` are the same kind of
+  same-day (2025-07-26), fully-superseded playbook artifact — recorded as an open repo-hygiene
+  TODO in `HANDOFF.md` rather than touched in this pass.
+
 ## 2026-08-30 — Consolidated handoff docs; script cleanup
 
 - Merged four overlapping documents — `seq-hashing-project-handoff.md`,

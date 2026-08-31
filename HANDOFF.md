@@ -1,6 +1,6 @@
 # Handoff — Trio Genome Analysis
 
-**Last updated: 2026-08-30**
+**Last updated: 2026-08-31**
 
 This is the one living document for current project state. For dated history, see
 [`CHANGELOG.md`](CHANGELOG.md) (append-only, newest first). This file gets edited in place —
@@ -406,10 +406,11 @@ these before/alongside Track 2 work rather than only as Track-1 cleanup:**
 
 **Repo hygiene (open, low priority, not resolved this pass):**
 
-13. `v3_commit_guide.md` and `claude-out.sh` (repo root, both untouched since 2025-07-26) are
-    scaffold/playbook scripts from the original v3.0 release process — check whether they've
-    drifted from what's actually in `scripts/` and either update or remove them. Not acted on in
-    this consolidation since they weren't part of the originally-named handoff set.
+13. `claude-out.sh` (repo root, untouched since 2025-07-26) is a scaffold/playbook script from
+    the original repo setup — same kind of stale, fully-superseded artifact as
+    `v3_commit_guide.md` (retired 2026-08-31, see `CHANGELOG.md`). Not acted on in this
+    consolidation. `scripts/README.md` is also a same-day (2025-07-26) release playbook with
+    similar content — worth the same treatment eventually, not touched here either.
 
 ---
 
