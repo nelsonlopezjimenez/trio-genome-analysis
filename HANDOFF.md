@@ -44,15 +44,23 @@ Windows/WSL2 machine in 2026-08). bash-first + samtools/bcftools/bgzip/tabix; Py
   are present in `data/reference/` on this machine, MD5-verified per `data/reference/manifest.tsv`.
 - **GIAB trio data**: HG002 (phased)/HG003/HG004 chr22 VCF slices present in `data/giab/`,
   per `data/giab/manifest.tsv`.
-- **`data/derived/` is currently EMPTY on this (Mac mini) checkout.** The SQLite hash catalog
-  (`hash_catalog.db`) and FASTA blob store described below were built on the original
-  Windows/WSL2 machine on 2026-07-03 and are gitignored — they do **not** exist here yet.
-  Notebooks 02→04 need to be rerun on this machine to regenerate them before any further work
-  on Track 1 can proceed here.
-- **Notebook 01** (hash functions) has been rerun and kernel-verified on the Mac mini
-  (2026-08-29) — MD5/SQ outputs reproduce exactly.
-- Notebooks 02–04 have **not** been rerun on the Mac mini yet (no evidence in `data/derived/`
-  or git history of it happening).
+- **Notebooks 01→04 have all been rerun on the Mac mini (2026-08-31)** and `data/derived/
+  chr22/` is now populated (`hash_catalog.db`, `chr22_{proteins,cds,exons}.fa` +
+  `.fai`) — gitignored, so this is machine-local, not committed. **Verified exact reproduction
+  of the original 2026-07-03 Windows/WSL2 run**, checked directly against the live SQLite
+  catalog, not just re-trusting printed output: same row counts (16,176 GENCODE rows: 1341
+  AA + 1341 CDS + 13,494 exon; 1110 GIAB haplotype rows), the same MD5/SQ hash **byte-for-byte**
+  for a spot-checked accession (`ENST00000332987.5.exon1` → `e5b224e6fc070e352dc20de89222b13d`,
+  identical on both platforms), and an exact match on the full Track 1 classification breakdown
+  (see [Data facts](#data-facts-verified-chr22-gencode-v46) below) — expected, since hashing is
+  deterministic on identical input bytes regardless of OS, but confirmed rather than assumed.
+- **Notebook 01** (hash functions) was rerun and kernel-verified on the Mac mini first, on
+  2026-08-29, ahead of the full 02→04 run above — MD5/SQ outputs reproduced exactly then too.
+- **Not yet done:** `notebooks/03_sqlite_catalog.ipynb` and `notebooks/04_trio_inheritance.ipynb`
+  haven't actually been saved in VS Code — both are still byte-identical on disk to the old
+  2026-07-03 git-committed version (verified via `diff` against `git show HEAD:...`), even
+  though the kernel genuinely executed their cells and wrote the real data described above.
+  Save both (Cmd+S) so the tracked files show today's actual output.
 - `scripts/gencode_cds_extract.py` is the promoted, standalone version of notebook 02's
   extraction logic. It has one known fidelity gap vs. the notebook — see
   [Known gaps / bugs](#known-gaps--bugs-verified-against-code) below.
@@ -306,11 +314,15 @@ exon-exon junction; only the whole spliced CDS is guaranteed to be a multiple of
     tags — mostly IG/TR immune-receptor gene segments, e.g. `IGLV4-69`, which genuinely lack a
     stop codon pre-V(D)J-recombination).
   - 10 selenoprotein transcripts across `SELENOM`, `SELENOO`, `TXNRD2` (see gap #1 above).
-- SQLite catalog (built 2026-07-03, on the original Windows/WSL2 machine — not present in this
-  Mac mini's `data/derived/`, see [Current state](#current-state-verified-against-the-filesystem-not-just-prose)):
-  **16,176 rows** = 1341 AA + 1341 CDS + 13,494 exon hashes, across 443 chr22 genes. Round-trip
-  verified (SQLite hash → FASTA lookup → re-hash → matches).
-- **Track 1 result** (notebook 04, run 2026-07-03, of 1341 validated transcripts):
+- SQLite catalog: **16,176 rows** = 1341 AA + 1341 CDS + 13,494 exon hashes, across 443 chr22
+  genes. Round-trip verified (SQLite hash → FASTA lookup → re-hash → matches). Originally built
+  2026-07-03 on the Windows/WSL2 machine; **reproduced exactly on the Mac mini 2026-08-31** (see
+  [Current state](#current-state-verified-against-the-filesystem-not-just-prose) — same counts,
+  byte-for-byte identical hash spot-checked directly).
+- **Track 1 result** (notebook 04; originally run 2026-07-03 on Windows/WSL2, **reproduced
+  exactly on the Mac mini 2026-08-31** — every number below matched on both platforms, checked
+  directly against the live SQLite catalog, not just re-trusting old printed output — of 1341
+  validated transcripts):
   - **431 confident parent-of-origin calls** (201 paternal + 230 maternal haplotypes).
   - 675 uninformative (variant shared by both parents — the Mendelian-uniqueness caveat).
   - 681 trivial (no variants in the child for that CDS).
@@ -319,8 +331,13 @@ exon-exon junction; only the whole spliced CDS is guaranteed to be a multiple of
     across 4 transcript isoforms): neither parent has any VCF record at that position (implied
     homozygous-reference), child is heterozygous, and the site carries GIAB's own
     `difficultregion=hg38.segdups_sorted_merged,lowmappabilityall` tag — a mapping-artifact
-    signature, not a real de novo call. Confident calls touch a difficult region ~7.5–8.7% of
-    the time vs. **100%** (4/4) for `no_parental_match`.
+    signature, not a real de novo call.
+  - Difficult-region overlap by category (precise per-category figures, from the Mac mini run):
+    `uninformative_shared` 59/675 (8.7%), `maternal_origin` 18/230 (7.8%), `paternal_origin`
+    15/201 (7.5%), `no_parental_match` **4/4 (100%)** — confident calls (maternal+paternal)
+    combined: 33/431 (7.7%). The gap between ~7.7% background and 100% for `no_parental_match`
+    is the actual evidence for "mapping artifact, not real de novo," not just the single-digit
+    count.
 - Counts/expectations (design-time estimates, not all re-verified against chr22 data above):
   human protein-coding genes ≈ 19,400 genome-wide; chr22 protein-coding genes ~495 (Ensembl
   115/GENCODE v49) → ~490 MANE transcripts; reference baseline (protein + CDS + per-exon)
@@ -417,12 +434,16 @@ these before/alongside Track 2 work rather than only as Track-1 cleanup:**
 
 **Track 1 (inheritance) — done, cleanup only, not being actively pursued:**
 
-7. **Regenerate `data/derived/chr22/hash_catalog.db` on the Mac mini** — `data/reference/` and
-   `data/giab/` are already present here; just rerun notebooks 02→04 in order. (Only needed if
-   revisiting Track 1 output; not required to start Track 2 work.)
+~~7. Regenerate `data/derived/chr22/hash_catalog.db` on the Mac mini~~ — **done 2026-08-31**,
+notebooks 02→04 rerun on the Mac mini and verified to reproduce the original Windows/WSL2 run
+exactly (see [Current state](#current-state-verified-against-the-filesystem-not-just-prose) and
+[Data facts](#data-facts-verified-chr22-gencode-v46)).
+
 8. **Confirm `samtools`/`bcftools`/`mash` are actually installed on the Mac mini** — run
    `scripts/setup_macos.sh` if not, then the sanity checks in
-   `docs/python-env-cheatsheet.md`.
+   `docs/python-env-cheatsheet.md`. (Notebooks 01–04 ran successfully without needing this
+   confirmed — none of them shell out to samtools/bcftools/mash directly — but still open for
+   when Track 2's Mash/sourmash work or `bcftools consensus` are actually needed.)
 9. Extend variant handling to indels (currently 30/1341 transcripts flagged `has_indel` and
    excluded) — needs position-ordered, coordinate-shift-aware handling per variant.
 10. Low-complexity flagging (`dustmasker` for CDS, `segmasker` for protein) → populate the

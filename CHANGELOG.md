@@ -87,6 +87,35 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   `HANDOFF.md` (detailed current state) and this file (full dated history): a project-evolution
   timeline and a data-flow diagram, meant to be read first after any break to reload the mental
   model before diving into the detail files. Linked from `README.md`.
+- **First full notebook run on the Mac mini: notebooks 01→04 all rerun, `data/derived/chr22/`
+  populated for the first time on this machine, and verified to reproduce the original
+  2026-07-03 Windows/WSL2 run exactly.** Evidence chain, checked directly rather than trusted:
+  file timestamps on `data/derived/chr22/` confirm genuine fresh execution today (FASTA + `.fai`
+  files at 11:41, `hash_catalog.db` updated to 11:51 — exactly the sequence notebook 03 then
+  notebook 04 would produce), and the live SQLite catalog was queried directly:
+  - Row counts identical: 16,176 GENCODE rows (1341 AA + 1341 CDS + 13,494 exon), 1110 GIAB
+    haplotype rows.
+  - A spot-checked accession's hash is **byte-for-byte identical** across platforms:
+    `ENST00000332987.5.exon1` → `hash_md5 = e5b224e6fc070e352dc20de89222b13d` on both the
+    original Windows/WSL2 run and the fresh Mac mini run. Expected, since hashing is
+    deterministic on identical input bytes regardless of OS — but confirmed rather than assumed.
+  - Full Track 1 classification breakdown reproduced exactly: 681 no_variants_in_child, 675
+    uninformative_shared, 230 maternal_origin, 201 paternal_origin (431 confident total), 75
+    phase_incomplete, 30 has_indel, 4 no_parental_match (all four still carrying
+    `difficultregion=True`, 100%).
+  - Obtained a more precise difficult-region breakdown than previously documented (the original
+    entries only gave a "~7.5–8.7%" range for confident calls as a whole): `uninformative_shared`
+    59/675 (8.7%), `maternal_origin` 18/230 (7.8%), `paternal_origin` 15/201 (7.5%),
+    `no_parental_match` 4/4 (100%) — now recorded per-category in `HANDOFF.md`.
+  - **Housekeeping, not yet resolved:** neither `notebooks/03_sqlite_catalog.ipynb` nor
+    `notebooks/04_trio_inheritance.ipynb` has actually been saved in VS Code — both files on
+    disk are still byte-identical to the old 2026-07-03-era git-committed version (confirmed via
+    `diff` against `git show HEAD:...`), even though the kernel genuinely executed their cells
+    and wrote real new data to `data/derived/`. (Notebook 04's old committed text happens to
+    already show matching numbers with forward-slash paths — that's the original 2026-07-03 run
+    coincidentally not using Windows path separators, not evidence of today's run; only the file
+    timestamps and the live database query are.) Save both notebooks (Cmd+S) so the tracked
+    `.ipynb` files show today's real macOS-native output instead of stale text.
 
 ## 2026-08-30 — Consolidated handoff docs; script cleanup
 

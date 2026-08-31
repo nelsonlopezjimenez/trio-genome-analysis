@@ -56,6 +56,10 @@ annotation-defined and fuzzy while CDS boundaries (start codon → stop codon) a
    category. `difficultregion` is now tracked as per-haplotype metadata generally (not just for this
    case): confident calls touch a difficult region ~8% of the time vs. **100%** for `no_parental_match`.
    Results persisted into the existing SQLite schema (no schema change needed).
+8. **Reproduced exactly on native macOS** (2026-08-31) — notebooks 01→04 rerun on the Mac mini
+   (no WSL2 needed anymore), matching the original Windows/WSL2 run byte-for-byte: same row
+   counts, an identical MD5 hash for a spot-checked accession, and the identical Track 1
+   classification breakdown above. Details: [`HANDOFF.md`](HANDOFF.md).
 
 ### Why phasing matters here
 
