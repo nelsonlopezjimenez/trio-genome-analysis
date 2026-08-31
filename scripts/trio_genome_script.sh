@@ -2,7 +2,7 @@
 
 # Trio Genome Analysis Script - Chromosome-by-Chromosome Processing
 # Generates full genome sequences, extracts genes, and computes SHA256 hashes
-# Version 2.0 - Chromosome-based processing for 1000 Genomes data
+# Version 3.0 - Chromosome-based processing + optional protein-coding-only GTF filter
 
 set -e  # Exit on any error
 

@@ -404,13 +404,9 @@ these before/alongside Track 2 work rather than only as Track-1 cleanup:**
     possible-vs-observed synonymous SNVs on chr22 vs. gnomAD v4 — raise at the cDNA synonymous
     layer if/when relevant.
 
-**Repo hygiene (open, low priority, not resolved this pass):**
-
-13. `claude-out.sh` (repo root, untouched since 2025-07-26) is a scaffold/playbook script from
-    the original repo setup — same kind of stale, fully-superseded artifact as
-    `v3_commit_guide.md` (retired 2026-08-31) and `data/README.md`/`scripts/README.md`'s old
-    contents (also retired/rewritten 2026-08-31, see `CHANGELOG.md`). Not acted on in this
-    consolidation.
+No open repo-hygiene items as of 2026-08-31 — the last stale scaffold files
+(`v3_commit_guide.md`, `data/README.md`, `claude-out.sh`) have all been retired; see
+`CHANGELOG.md`.
 
 ---
 

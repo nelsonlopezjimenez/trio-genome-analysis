@@ -48,6 +48,28 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   `scripts/README.md` was then rewritten as a short index pointing to `README.md` (usage),
   `docs/data_sources.md` (downloads), and `HANDOFF.md` (POC design/setup) instead of holding its
   own copy of any of that.
+- **Third pass, same day: full repo sweep for remaining stale/duplicate content**, ahead of
+  running notebooks 02–04 on the Mac mini to (re)generate real results.
+  - `claude-out.sh` (root, untouched since the very first commit) removed (`git rm`) — the
+    original repo-bootstrap playbook (`git init`, `.gitignore`, `README.md`, `docs/
+    data_sources.md` scaffolding, version tagging, Git LFS setup, branch strategy). Confirmed
+    fully superseded before deleting: the repo already exists with all of that in place, no git
+    tags were ever created (`git tag -l` is empty), and Git LFS/the suggested branch workflow
+    were never adopted — nothing in it reflects what actually happened.
+  - `scripts/trio_genome_script.sh`'s header comment still said "Version 2.0" despite already
+    having the v3.0 `PROTEIN_CODING_ONLY` filter built in — corrected to "Version 3.0."
+  - `notebooks/01_hash_functions.ipynb`: its first markdown cell named the now-deleted
+    `seq-hashing-project-handoff.md` by filename — updated to `HANDOFF.md`. (Other notebooks'
+    generic "per the handoff" phrasing left as-is — it doesn't name a specific dead file, and
+    still reads correctly now that `HANDOFF.md` *is* "the handoff.") Also fixed a harmless typo
+    in the same notebook's worked-example cell — a stray space inside the literal
+    `preproinsulin` sequence constant (`"...LLAL LALWG..."` instead of `"...LLALLALWG..."`).
+    Verified this doesn't change any result: `normalize_protein` already strips whitespace
+    before hashing, so the cell's assertions passed before and after — pure source cleanup, not
+    a behavior change.
+  - Confirmed via repo-wide search: no remaining references anywhere to any of the retired
+    files, and no other stale `scripts/trio_analysis.sh` mentions outside this file's own
+    historical entries (which correctly describe what existed at the time).
 
 ## 2026-08-30 — Consolidated handoff docs; script cleanup
 
