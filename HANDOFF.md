@@ -408,9 +408,9 @@ these before/alongside Track 2 work rather than only as Track-1 cleanup:**
 
 13. `claude-out.sh` (repo root, untouched since 2025-07-26) is a scaffold/playbook script from
     the original repo setup — same kind of stale, fully-superseded artifact as
-    `v3_commit_guide.md` (retired 2026-08-31, see `CHANGELOG.md`). Not acted on in this
-    consolidation. `scripts/README.md` is also a same-day (2025-07-26) release playbook with
-    similar content — worth the same treatment eventually, not touched here either.
+    `v3_commit_guide.md` (retired 2026-08-31) and `data/README.md`/`scripts/README.md`'s old
+    contents (also retired/rewritten 2026-08-31, see `CHANGELOG.md`). Not acted on in this
+    consolidation.
 
 ---
 

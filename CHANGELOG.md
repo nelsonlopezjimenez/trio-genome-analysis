@@ -30,7 +30,24 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   2026-08-30 consolidation.
 - Noted but not acted on: `scripts/README.md` and `claude-out.sh` are the same kind of
   same-day (2025-07-26), fully-superseded playbook artifact — recorded as an open repo-hygiene
-  TODO in `HANDOFF.md` rather than touched in this pass.
+  TODO in `HANDOFF.md` rather than touched in this pass. (`scripts/README.md` addressed later
+  the same day — see below.)
+- **Second pass, same day: `scripts/README.md` rewritten, `data/README.md` retired.**
+  Comparing the three README-shaped files at root/`scripts/`/`data/` found `data/README.md` was
+  a genuine duplicate — its "Run analysis"/"Configuration Options"/"File Outputs"/"Version
+  History" content is a garbled copy of the same `v3_commit_guide.md` heredoc retired above
+  (it even had a stray literal `EOF` line left over from the heredoc), and its download commands
+  duplicated `scripts/README.md`'s. Removed (`git rm`).
+  One finding changed the plan, though: `docs/data_sources.md` (the file that's supposed to be
+  the authoritative download-instructions doc) actually had *placeholder* URLs
+  (`wget "ftp://...chr22.recalibrated_variants.vcf.gz"`, literal ellipsis), while
+  `scripts/README.md` and `data/README.md` both had the real, working URLs (1000 Genomes chr22
+  VCF, GRCh38 GCA reference, GENCODE v46 GTF). So instead of just deleting the duplicates, the
+  real URLs and the validation commands (`bcftools view -h`, `samtools faidx`, GTF grep count)
+  were moved into `docs/data_sources.md`, making it actually authoritative for the first time.
+  `scripts/README.md` was then rewritten as a short index pointing to `README.md` (usage),
+  `docs/data_sources.md` (downloads), and `HANDOFF.md` (POC design/setup) instead of holding its
+  own copy of any of that.
 
 ## 2026-08-30 — Consolidated handoff docs; script cleanup
 
