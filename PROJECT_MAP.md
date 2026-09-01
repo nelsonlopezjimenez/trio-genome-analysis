@@ -25,6 +25,34 @@ Within effort #2, there have been **two pivots** in what the hashes are *for*:
 
 ---
 
+## Data sources — which one are we actually using, and why it matters
+
+| Source | Used for | ID namespace |
+|---|---|---|
+| **GENCODE v46** (= **Ensembl 112** for human — confirmed from the GTF header, not assumed) | **The pipeline's actual source of truth** — GTF + transcript/protein FASTA, everything in the diagram below starts here | `ENSG`/`ENST`/`ENSP` |
+| **Ensembl** (release 112, release-matched to GENCODE v46) | External validation only (2026-09-01) — cross-hashed all 1341 chr22 transcripts, exact match on protein *and* CDS layers | `ENSG`/`ENST`/`ENSP` — same as GENCODE, expected: GENCODE co-produces Ensembl's own human annotation, so this checks *pipeline correctness*, not independent *annotation content* |
+| **NCBI RefSeq** | One worked-example accession only (`NP_000198.1`, notebook 01) — **never** a bulk data source here | `NM_`/`NP_`/`XM_`/`XP_` — **different namespace, not interchangeable** |
+| **GIAB** (NIST) | Trio variant calls — HG002 (son) / HG003 (father) / HG004 (mother), the active effort's trio | Sample IDs, not sequence IDs |
+| **1000 Genomes** | Impostor false-positive test (`NA19240`); also the *older*, unrelated v1→v3 pipeline's trio (`NA12878`) | Sample IDs, not sequence IDs |
+
+**Three things that genuinely differ between GENCODE/Ensembl and NCBI RefSeq — don't assume any of
+these are the same:**
+1. **Accession IDs aren't interchangeable**, and RefSeq's own NM/NP aren't even paired by matching
+   digits (`NM_000207` pairs with `NP_000198`, *not* `NP_000207` — see `HANDOFF.md`'s Known Gaps).
+2. **Stop-codon inclusion differs by *file*, not by organization** — GENCODE's own GTF `CDS`
+   feature excludes it, while GENCODE's `pc_transcripts.fa` header span, NCBI RefSeq CDS, *and*
+   Ensembl's CDS sequence all include it. This pipeline's canonical `cds_seq` excludes it —
+   mismatching this is the documented "#1 silent error" (full table in `HANDOFF.md`).
+3. **Evidence/confidence tiers use different vocabularies**: GENCODE uses `level` 1/2/3 + TSL +
+   tags (`MANE_Select`); NCBI RefSeq uses the `NM_` (curated) vs. `XM_` (Gnomon-predicted) prefix
+   distinction. Different axes — don't conflate a GENCODE `level` with a RefSeq prefix.
+
+**Release-pinning is the other trap**: GENCODE v46 = Ensembl 112 *specifically* — pulling an
+Ensembl file from a different release would silently drift IDs/coordinates against the GENCODE
+data already in this repo, even though both are nominally "Ensembl."
+
+---
+
 ## Timeline
 
 ```
@@ -46,9 +74,14 @@ Within effort #2, there have been **two pivots** in what the hashes are *for*:
   │  Primary goal flips: Track 2 (population/ancestry) over Track 1 (inheritance)
   │  Track 1 kept complete, as reference — not being extended further
   │
-  2026-08-31  (today)
-  ▼  Full repo cleanup (stale/duplicate docs retired); about to run notebooks
-     02→04 on the Mac mini for the first native-macOS results
+  2026-08-31
+  │  Full repo cleanup (stale/duplicate docs retired); notebooks 01→04 rerun on the Mac mini —
+  │  exact byte-for-byte reproduction of the original Windows/WSL2 run confirmed
+  │
+  2026-09-01  (today)
+  ▼  Empirical false-positive test on Track 1 (confirms it does NOT establish paternity — see
+     HANDOFF.md's Finding section); external validation against Ensembl (1341/1341 exact match,
+     chr22, both protein and CDS layers) — the two open "Not yet done" validation TODOs, closed
 ```
 
 ---

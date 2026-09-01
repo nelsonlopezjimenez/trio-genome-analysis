@@ -38,3 +38,11 @@ __pycache__/
 
 # mine
 *.gz
+
+# Small chr22-only external-validation reference (see HANDOFF.md's external-validation finding) --
+# ~1.1MB total, kept for external sanity-checking, unlike the genome-wide Ensembl downloads
+# they're derived from (data/reference/validation/ensembl112_*.fa.gz, correctly excluded above).
+# Must stay AFTER the *.gz rule above -- gitignore applies rules in order, and a negation before
+# a later matching exclude gets overridden (this bit us once already, worth the comment).
+!data/reference/validation/chr22_ensembl112.cds.fa.gz
+!data/reference/validation/chr22_ensembl112.pep.fa.gz

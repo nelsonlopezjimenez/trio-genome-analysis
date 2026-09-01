@@ -9,6 +9,70 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-01 — Empirical false-positive test for Track 1; salt-hashing evaluated; TODO expanded
+
+- **Documented finding: Track 1's classification does not confirm paternity, verified
+  empirically, not just argued.** Substituted `NA19240` (unrelated 1000 Genomes YRI sample) for
+  the real father (HG003) and reran `explainable_by()` against the 201 real `paternal_origin`
+  haplotypes. Result: 71 (35.3%) still look "consistent" with the random impostor at the
+  single-locus level; 130 (64.7%) correctly exclude him. Those 201 haplotypes span only 64
+  distinct genes (linkage disequilibrium means they aren't 201 independent tests — haplotypes
+  from the same gene share the same underlying DNA). Treating the 64 genes as roughly
+  independent, the joint miss probability is `0.353^64 ≈ 10⁻²⁹`. Full writeup, including
+  explanations of linkage disequilibrium and likelihood-ratio-based paternity analysis (and why
+  this pipeline computes neither), added to `HANDOFF.md`.
+  - Method note: the first attempt (whole-chromosome remote fetch of one sample from the
+    2,504-sample 1000G high-coverage VCF) was abandoned after ~40 minutes for only 0.57% of
+    chr22 — sample-subsetting via `bcftools -s` doesn't reduce network transfer, since every
+    sample's INFO/FORMAT fields still have to be streamed and decompressed before unwanted
+    columns are discarded. Switched to a BED file of just the 4,186 CDS-exon blocks (0.7 Mb vs.
+    chr22's 40.3 Mb), which completed in a reasonable time. Files kept at
+    `data/giab/impostor_test/` (gitignored via the existing `*.vcf.gz` pattern).
+- **Evaluated (not adopted) salting hashes with a private secret**, combined with the
+  already-planned IUPAC-collapse layer. Full pros/cons analysis added to `HANDOFF.md`'s Hash
+  schemes section: the core tension is that salting is fundamentally incompatible with this
+  project's refget-compatibility goal (a salted hash can never match a public checksum), and the
+  current dataset (GIAB/1000G, already public) has nothing private to protect yet. Recommended:
+  revisit only if/when real private individuals' sequences are hashed, and then as a separate
+  column alongside the unsalted one, using a real keyed-hash construction (HMAC) rather than
+  naive concatenation.
+- **Active TODO expanded** with 5 items from this session: building the IUPAC-collapsed
+  representation on already-downloaded data (not just resolving the design question), a
+  download-strategy writeup for scaling past chr22 (informed directly by the slow-fetch problem
+  above), an expanded indel-handling writeup (the actual coordinate-math problem, not just "do
+  it"), a combined indels/segmental-duplication/difficult-regions strategy item (prompted by the
+  `ENSG00000100033` case), and a pointer to the salt evaluation.
+- **External validation against Ensembl — the open "validate against a known-good external
+  reference" TODO, done for real, chr22, full match.** No bulk-downloadable refget checksum
+  database exists (refget is a query API, not a static dump) — instead, pulled Ensembl release
+  112's own CDS + protein FASTA (confirmed as the correct release match by reading GENCODE v46's
+  own GTF header: `version 46 (Ensembl 112)`, not assumed), verified both downloads against
+  Ensembl's published `CHECKSUMS`, and cross-hashed against this project's own GENCODE-derived
+  chr22 catalog. **1341/1341 protein sequences byte-identical; 1341/1341 CDS sequences match**
+  once the already-documented stop-codon convention difference is accounted for (Ensembl's CDS
+  FASTA includes the stop, this project's canonical form excludes it) — hashes match on both
+  layers, zero mismatches. This validates the hash formulas *and* the extraction/translation
+  logic simultaneously, against a fully independent source.
+  - `scripts/validate_against_ensembl.py` added (reusable — rerun for any other chromosome by
+    changing one argument, no new design needed, since the genome-wide Ensembl downloads already
+    cover the whole genome).
+  - `data/reference/validation/chr22_ensembl112.{cds,pep}.fa.gz` (~1.1 MB combined) committed —
+    small chr22-only subsets, kept via a `.gitignore` exception so this check can be rerun
+    without re-fetching the full 23+15 MB genome-wide Ensembl downloads. Those genome-wide files
+    stay gitignored, machine-local; `data/reference/validation/manifest.tsv` records their source
+    URLs and MD5s.
+  - One `.gitignore` lesson worth recording: the exception was first added *before* the file's
+    later blanket `*.gz` rule and got silently overridden — gitignore applies rules in order, so
+    a negation has to come after every rule that would otherwise match. Fixed and commented in
+    place so it doesn't get re-broken by a future edit.
+- **`PROJECT_MAP.md` updated**: added a "Data sources" table up front (GENCODE v46 = Ensembl 112
+  as the pipeline's actual source of truth; Ensembl used only for external validation; NCBI
+  RefSeq used only for one worked-example accession, never a bulk source) plus the three concrete
+  ways GENCODE/Ensembl and NCBI RefSeq genuinely differ (ID namespace, stop-codon inclusion,
+  evidence-tier vocabulary) — meant to prevent silently mixing sources after a break. Also fixed
+  the timeline's stale endpoint (still said "about to run notebooks" after that had already
+  happened) to reflect today's two closed validation TODOs.
+
 ## 2026-08-31 — Retired v3_commit_guide.md; README's v1→v3 section brought current
 
 - `v3_commit_guide.md` (root, untouched since 2025-07-26) removed (`git rm`). It was a one-time

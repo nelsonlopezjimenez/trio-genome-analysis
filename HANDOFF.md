@@ -1,6 +1,6 @@
 # Handoff — Trio Genome Analysis
 
-**Last updated: 2026-08-31**
+**Last updated: 2026-09-01**
 
 This is the one living document for current project state. For dated history, see
 [`CHANGELOG.md`](CHANGELOG.md) (append-only, newest first). This file gets edited in place —
@@ -137,6 +137,57 @@ Windows/WSL2 machine in 2026-08). bash-first + samtools/bcftools/bgzip/tabix; Py
   refget-retrievable checksum). What *has* been validated is one specific protein accession
   (`NP_000198.1`, see Known gaps #4) plus internal invariants (`translate(CDS) == protein`) on
   1341 real chr22 transcripts — a different, narrower kind of check. See TODO.
+
+### Private salt on IUPAC-collapsed hashes — evaluated 2026-09-01, NOT adopted, decision open
+
+Idea raised: hash the IUPAC-collapsed (phase-free, see Track 2) sequence with a secret salt known
+only to the user (`hash(salt + iupac_seq)`), so that even someone with the full hash catalog file
+couldn't use it to look anything up without also knowing the salt.
+
+**What this would actually defend against.** For genomic sequences, brute-forcing the *original*
+sequence back out of an unsalted hash is already infeasible regardless of salting — the search space
+of possible sequences is astronomically larger than any realistic rainbow table. The real threat a
+salt addresses is narrower and more realistic: an adversary with a *small closed set of candidates*
+(reference alleles, gnomAD/ClinVar-cataloged variants, another person's already-known genome) testing
+each candidate's hash against your catalog. A secret salt blocks exactly that — without it, nobody
+can precompute `hash(salt + candidate)` to compare.
+
+**Pros:**
+- Blocks candidate-matching attacks (re-identification against public variant catalogs) for hashes
+  of **private, real individuals' data** — this doesn't apply to the GIAB/1000G data currently in
+  this repo, since that's already public; it would matter if this pipeline is ever pointed at actual
+  private samples.
+- Combines naturally with the IUPAC layer already planned for Track 2 (phase-free, single hash per
+  person per CDS) — same place in the pipeline, same motivation (don't expose more than necessary).
+
+**Cons:**
+- **Directly conflicts with this project's own refget-compatibility goal.** The entire reason MD5 +
+  `sha512t24u` was chosen (see above) was to be comparable with samtools/refget/Ensembl/NCBI public
+  checksums. A salted hash can never match a public checksum, by design — salting and
+  refget-interoperability are mutually exclusive for the *same* hash column. (Could keep both: an
+  unsalted refget-compatible column for validation, plus a separate salted column for
+  access-controlled sharing — real added complexity, and the unsalted column still leaks everything
+  if it's ever shared alongside the salted one.)
+- **The salt becomes a single point of failure.** Lose it, and the *entire* catalog becomes
+  permanently unverifiable and unreproducible — including for legitimate future use by the same
+  person. This directly undercuts the exact property this project relied on all through
+  2026-08-31/09-01: reproducing the same hash across machines to confirm correctness. A leaked salt,
+  unlike a per-record random salt in password systems, compromises the *whole* catalog at once, not
+  one record.
+- **MD5/truncated-SHA512 were never chosen as security primitives** — they were chosen for
+  refget-alignment and content-addressing, not resistance to a determined attacker. Naive
+  `hash(salt + seq)` concatenation is weaker than it feels; a real security-grade construction would
+  need HMAC-SHA256 or similar, a different primitive from what's used here.
+- **Doesn't obviously add protection beyond what IUPAC-collapse already provides.** IUPAC collapse
+  already removes phase information (a different concern) — salting addresses *lookup* resistance,
+  a separate threat. Worth being explicit about which specific threat is actually being defended
+  against before adding the complexity.
+
+**Recommendation, not yet actioned:** don't adopt for the current GIAB/1000G-only dataset (nothing
+private to protect yet, and it would break refget interop for no benefit). Revisit specifically if/
+when real private individuals' sequences are ever hashed — and if so, keep unsalted + salted as
+separate columns rather than replacing the refget-compatible one, and use a real keyed-hash
+construction (HMAC) rather than concatenation.
 
 ### Normalization (mandatory before hashing)
 - Uppercase; residues only; strip whitespace/newlines.
@@ -346,6 +397,120 @@ exon-exon junction; only the whole spliced CDS is guaranteed to be a multiple of
 
 ---
 
+## Finding: Track 1's classification does NOT confirm paternity (empirical false-positive test, 2026-09-01)
+
+Prompted by the direct question "does this confirm 100% paternity?" — answer: **no**, and this was
+verified empirically, not just argued structurally.
+
+**Why not, structurally:** `explainable_by()` in notebook 04 is a binary per-site allele-membership
+test — it already *assumes* HG003/HG004 are the parents and asks "is the child's allele consistent
+with this assumed parent." It has no concept of population allele frequency and never combines
+evidence across sites into a single statistic. That's fundamentally different from what real
+paternity/forensic testing computes (see LR-based analysis, below).
+
+**Empirical test:** substituted `NA19240` (a 1000 Genomes YRI sample — different population, zero
+family relation to the Ashkenazi GIAB trio) for HG003 (the real father), and reran the *exact same*
+`explainable_by()` logic against the 201 haplotypes that notebook 04 confidently calls
+`paternal_origin` with the real father. Fetched via `bcftools view -R <CDS-region BED file> -s
+NA19240 <1000G high-coverage chr22 URL>` — full method note: a whole-chromosome single-sample
+remote fetch from this particular 2,504-sample file was tried first and was far too slow (~40 minutes
+for 0.57% of chr22 — see [Active TODO](#active-todo), item on download strategy); restricting to a
+BED file of just the 4,186 CDS-exon blocks (0.7 Mb vs. chr22's 40.3 Mb) made it tractable. Both
+`NA19240_chr22_cds.vcf.gz` and the BED file are in `data/giab/impostor_test/` (gitignored via the
+existing `*.vcf.gz` pattern — machine-local, not committed). The classification logic itself is
+saved as a reusable script, `scripts/impostor_test.py` (reuses notebook 04's functions verbatim,
+committed and runnable — verified to reproduce the numbers below exactly), so this test can be
+rerun against a different impostor sample or after any pipeline change without hand-copying code
+into an ad-hoc script again.
+
+**Result:**
+- Of the 201 real `paternal_origin` haplotypes, **71 (35.3%) are ALSO "explainable by" the random,
+  unrelated impostor** — a coincidental allele match at that single locus. **130 (64.7%) correctly
+  exclude the impostor.**
+- Those 201 haplotypes span only **64 distinct genes** — the real effective sample size is much
+  smaller than 201, because haplotypes from the same gene aren't independent evidence (see LD, below).
+- Treating the 64 genes as roughly independent (a simplification — see caveat below) and using the
+  35.3% single-locus miss rate, the joint probability of an unrelated person passing at *all* 64
+  gives `0.353^64 ≈ 10⁻²⁹` — vanishingly small, even though any single locus is weak evidence alone.
+
+**Linkage disequilibrium (LD) — why 201 isn't 201 independent tests.** LD is the non-random
+association between alleles at two positions because they're physically close on a chromosome and
+therefore usually inherited together — recombination (the process that shuffles alleles between
+generations) rarely lands between two nearby positions in any given meiosis, so whatever allele
+combination existed on that chromosome generations ago tends to still travel together as a block
+("haplotype"). Multiple transcripts of the *same* gene share the same underlying genomic stretch by
+definition (this is exactly why two isoforms of `ENSG00000177663` independently agreed on
+maternal/paternal assignment in notebook 04's own worked example) — so collapsing to distinct genes
+(64) is a rough correction, and even that's generous: nearby *different* genes on chr22 can still
+share some LD that a gene-level count doesn't capture. A rigorous number would need actual
+recombination-distance data between loci, which hasn't been computed.
+
+**LR-based analysis — what real paternity testing computes that this pipeline doesn't.** For one
+marker: `LR = P(child's genotype | this man IS the father) / P(child's genotype | a random unrelated
+man)`. The denominator is where population allele frequency enters — a common allele (e.g. 30%
+frequency) gives a weak LR even on a true match, because random people carry it often anyway
+(exactly what the 35.3% single-locus miss rate demonstrates); a rare allele (e.g. 0.1%) gives a
+strong LR, since almost no random person would carry it by chance. Real forensic panels (CODIS STRs,
+curated SNP panels) are deliberately chosen on *different chromosomes or far apart* specifically so
+LD between markers is negligible — genuine independence, unlike the 64-genes-on-one-chromosome
+situation here. Under real independence, the **Combined Paternity Index** is the *product* of each
+locus's LR, and with ~15–20 well-chosen markers that product routinely reaches billions or trillions;
+standard Bayesian math (`posterior odds = CPI × prior odds`, prior conventionally 50% absent other
+evidence) then converts that into the "99.99%+ probability of paternity" figure forensic labs report.
+`explainable_by()` computes neither piece — no allele-frequency weighting, no product across loci, no
+posterior probability. It's a useful binary consistency check for tracing inheritance *given* an
+assumed relationship; it cannot produce a real paternity-confidence number as implemented.
+
+---
+
+## External validation against Ensembl (2026-09-01)
+
+**Question that prompted this: is there a public "database" of reference checksums to just
+download and compare against, instead of hashing something ourselves?** Short answer: **no, not
+as a bulk-downloadable file.** GA4GH refget is an *API* spec — refget servers (NCBI, Ensembl,
+others) let you query "does this checksum exist" one sequence at a time; there's no static dump of
+"every checksum for every human transcript" to fetch. The practical alternative, and what was
+actually done here: pull the *reference sequences themselves* from a second independent,
+authoritative source, and hash-compare against what this pipeline independently derives from
+GENCODE. If they match, the hash formulas *and* the extraction logic are both validated at once —
+this is a **stronger** check than comparing precomputed checksums would have been, since it also
+re-validates `translate(CDS) == protein` against an independent implementation, not just our own.
+
+**Release matching, confirmed not assumed:** GENCODE v46's own GTF header states
+`version 46 (Ensembl 112)` directly — checked in the file, not looked up externally. Used Ensembl
+release 112's own CDS and protein FASTA downloads (`https://ftp.ensembl.org/pub/release-112/
+fasta/homo_sapiens/{cds,pep}/`), each ~15–23 MB compressed genome-wide, verified against Ensembl's
+published `CHECKSUMS` file (BSD `sum` format) before use.
+
+**Result — full match, 1341/1341 both ways:**
+- **Protein layer** (no stop-codon ambiguity at all): all 1341 chr22 protein sequences
+  byte-identical to Ensembl's independently-sourced protein FASTA; MD5 hashes match.
+- **CDS layer**: Ensembl's CDS FASTA includes the stop codon (per the documented convention
+  table above); this project's canonical `cds_seq` excludes it. Reconstructed the stop-included
+  form on the fly (`cds_seq + last 3 nt of Ensembl's sequence`, i.e. exactly the `cds_nt_withstop`
+  idea from the open TODO, applied ad hoc rather than as a schema column yet) — all 1341 match
+  exactly, hashes included.
+- Zero mismatches on either layer. This is the external validation the "Not yet done" note under
+  Hash schemes was waiting on.
+
+**Reusable script:** `scripts/validate_against_ensembl.py` — downloads nothing itself (points at
+the already-fetched files in `data/reference/validation/`), rebuilds the chr22 catalog, and reruns
+both comparisons. Also writes small chr22-only subset FASTAs
+(`data/reference/validation/chr22_ensembl112.{cds,pep}.fa.gz`, ~1.1 MB combined) so the full
+23+15 MB genome-wide downloads don't need to be committed or re-fetched to rerun this check —
+those stay gitignored (`data/reference/validation/manifest.tsv` records their source URLs/MD5s if
+they're ever needed again).
+
+**Answering "best way to collect these, starting with chr22, going forward":** this
+per-chromosome extract-and-cross-validate pattern *is* the recommended approach — there's no
+better shortcut than a real second source. To extend past chr22: rerun
+`load_ensembl_fasta(..., chrom_tag="<N>")` for whichever chromosome, no new design needed, since
+the genome-wide Ensembl files already cover everything — only the chr22-filtering step needs the
+chromosome argument changed. The same genome-wide Ensembl downloads already on disk can validate
+every other chromosome too, at zero extra download cost.
+
+---
+
 ## The two tracks (different tools, different goals)
 
 ### Track 2 — Distance / population (ancestry) — ACTIVE, current focus (design only so far)
@@ -407,50 +572,107 @@ exon-exon junction; only the whole spliced CDS is guaranteed to be a multiple of
 
 **Track 2 (ancestry) — active priority, per the 2026-08-29/30 pivot:**
 
-1. Validate the MD5/sha512t24u hashing pipeline against a known-good external reference before
-   building further on it — hash a full GRCh38 reference chromosome and confirm it reproduces a
-   published refget/`.dict`-file MD5, and/or hash a known Ensembl CDS and confirm it matches
-   Ensembl's own refget-retrievable checksum. Not yet done (see Hash schemes note above).
+~~1. Validate the MD5/sha512t24u hashing pipeline against a known-good external reference~~ —
+**done 2026-09-01, chr22, full match.** See
+[External validation against Ensembl](#external-validation-against-ensembl-2026-09-01) below for
+the result and the answer to "is there a checksum database to just download" (short answer: no —
+here's what to do instead, and it's now proven out on chr22).
 2. Mash/sourmash MinHash distance demo against a 1000 Genomes chr22 panel.
 3. 1000G+HGDP chr22 PCA/ADMIXTURE + coding-vs-genome-wide resolution-collapse demo (see
    [Track 2](#track-2--distance--population-ancestry--active-current-focus-design-only-so-far)).
-4. Resolve the still-open representation question for unphased heterozygous CDS: default to one
-   IUPAC-ambiguity sequence per CDS per person (phase-free, single hash) rather than enumerating
-   all `2^n` allele combinations (intractable past a handful of het sites, and the extra
-   combinations add no ancestry signal). Genotype-set hash (unordered allele pair per site) is
-   the fallback if exact genotypes are needed instead of the IUPAC collapse.
+4. **Build the IUPAC-collapsed representation on the data already downloaded** (not just resolve
+   the design question — actually do it): one IUPAC-ambiguity sequence per CDS per person
+   (phase-free, single hash) rather than enumerating all `2^n` allele combinations (intractable
+   past a handful of het sites, and the extra combinations add no ancestry signal). Data already
+   local for this: GIAB HG002/HG003/HG004 (`data/giab/`) and the NA19240 impostor-test sample
+   (`data/giab/impostor_test/`, see the false-positive finding above) — no new downloads needed
+   to prototype this. Genotype-set hash (unordered allele pair per site) is the fallback if exact
+   genotypes are needed instead of the IUPAC collapse. See also the salt-on-IUPAC-hashes
+   evaluation under [Hash schemes](#hash-schemes-refget-compatible--decided) — separate decision,
+   not yet adopted.
+5. **Download strategy for scaling past chr22 to all chromosomes** — the current remote
+   `bcftools view -r/-R -s <url>` approach doesn't scale well. Concretely hit this limit during
+   the impostor test above: fetching one sample's full chr22 from the 2,504-sample 1000G
+   high-coverage file took ~40 minutes for 0.57% of the chromosome before being restricted to a
+   BED file of just the needed regions — `bcftools` still has to stream and decompress every
+   sample's INFO/FORMAT fields per line before discarding unwanted columns, so sample-subsetting
+   alone doesn't reduce network transfer, only output size. Options to evaluate before going
+   genome-wide: (a) region-restrict via BED file to only what's needed, as done here — helps but
+   still slow with many small discontiguous regions; (b) a lighter-weight source than the
+   heavily-annotated NYGC high-coverage callset — e.g. 1000G phase 3 (GRCh38 liftover), which has
+   far fewer population-stratified INFO fields per line; (c) sites-only VCFs (gnomAD or similar)
+   if allele frequency is the actual need, not per-sample genotypes — dramatically smaller; (d)
+   download once per chromosome and cache locally rather than repeated narrow remote slices, if
+   many different region/sample queries are expected across a session; (e) cloud object storage
+   (1000G/gnomAD are also on AWS Open Data / GCP public datasets) if paired with compute in the
+   same region — not applicable currently (no cloud compute in use, see Environment section).
 
 **Shared reference-catalog fixes — both tracks depend on `gencode_cds_extract.py`'s output, do
 these before/alongside Track 2 work rather than only as Track-1 cleanup:**
 
-5. Fix the selenocysteine categorization gap: add
+6. Fix the selenocysteine categorization gap: add
    `elif "seleno" in t["tags"]: flagged.append((tid, "selenoprotein")); continue` to
    `build_catalog` (see Known gaps #1 — root cause verified, the tag is already parsed
    correctly, the branch just doesn't exist yet). Acceptance check: `translate_mismatch` count
    should drop from 10 to 0, all 10 recategorized as `selenoprotein`.
-6. Add a `cds_nt_withstop` hash variant + `cds_stop_included` boolean column to the SQLite
+7. Add a `cds_nt_withstop` hash variant + `cds_stop_included` boolean column to the SQLite
    schema, so `cds_md5`/`cds_sq` become comparable to external NCBI/Ensembl CDS checksums
    without changing the existing stop-excluded canonical form (see the stop-codon table above).
 
 **Track 1 (inheritance) — done, cleanup only, not being actively pursued:**
 
-~~7. Regenerate `data/derived/chr22/hash_catalog.db` on the Mac mini~~ — **done 2026-08-31**,
+~~8. Regenerate `data/derived/chr22/hash_catalog.db` on the Mac mini~~ — **done 2026-08-31**,
 notebooks 02→04 rerun on the Mac mini and verified to reproduce the original Windows/WSL2 run
 exactly (see [Current state](#current-state-verified-against-the-filesystem-not-just-prose) and
 [Data facts](#data-facts-verified-chr22-gencode-v46)).
 
-8. **Confirm `samtools`/`bcftools`/`mash` are actually installed on the Mac mini** — run
+9. **Confirm `samtools`/`bcftools`/`mash` are actually installed on the Mac mini** — run
    `scripts/setup_macos.sh` if not, then the sanity checks in
    `docs/python-env-cheatsheet.md`. (Notebooks 01–04 ran successfully without needing this
    confirmed — none of them shell out to samtools/bcftools/mash directly — but still open for
    when Track 2's Mash/sourmash work or `bcftools consensus` are actually needed.)
-9. Extend variant handling to indels (currently 30/1341 transcripts flagged `has_indel` and
-   excluded) — needs position-ordered, coordinate-shift-aware handling per variant.
-10. Low-complexity flagging (`dustmasker` for CDS, `segmasker` for protein) → populate the
+10. **Indels — the coordinate-math problem, worked out but not yet implemented.** Currently
+    30/1341 transcripts are flagged `has_indel` and excluded entirely (any transcript with an
+    indel or multiallelic site in *any* of the individuals in scope). Why this needs real design,
+    not a quick patch: `build_transcript_variant_map`'s coding-position mapping is computed once
+    per transcript from a fixed genomic→coding offset table, which assumes every variant is a
+    pure substitution (net length change zero). An indel of net length *N* shifts every
+    downstream coding-relative position by *N* — and that shift can differ **per individual**
+    (different people can have different-length indels at the same locus) and even **per
+    haplotype within one person**. To handle this correctly: (a) apply variants in genomic-
+    position order per haplotype, accumulating the offset shift as you go, rather than computing
+    offsets once from a static table; (b) each individual's/haplotype's CDS becomes its own
+    coordinate space once an indel is applied — can't share one `cds_seq` reference across
+    people anymore downstream of the indel; (c) decide what a frameshift indel (length not a
+    multiple of 3) actually *means* for hashing — the protein sequence changes completely
+    downstream of a frameshift, which is a real biological consequence, not a bug, so "compare
+    hashes downstream of a frameshift" may not even be a meaningful operation, separate from
+    getting the coordinate math right; (d) multiallelic indel sites (already excluded together
+    with plain multiallelic SNVs via the `len(alts) != 1` check) compound this further.
+11. **Indels, gene/segmental duplication, and "difficult regions" — these need one coherent
+    strategy, not three separate patches.** All three showed up together in the one
+    `no_parental_match` locus (gene `ENSG00000100033`, difficultregion=segdups+lowmappability) —
+    that's not a coincidence: segmental duplications are exactly where short-read mapping
+    produces spurious-looking variant calls (reads from a paralogous copy mismapping to the
+    "wrong" gene copy), which is a mapping-layer problem, not something the hashing/
+    classification layer can fix after the fact. Options to weigh, not yet decided: (a) exclude
+    `difficultregion`-tagged loci from confident-call totals entirely (coarse, safe, loses real
+    data); (b) keep the current "track as metadata, don't discard" approach but formalize it into
+    explicit **confidence tiers** in the catalog/classification output (e.g.
+    `high_confidence` / `flagged_difficult_region` as a queryable column, not just a string inside
+    `evidence`) so downstream Track 2 work can choose to include or exclude by tier per-analysis;
+    (c) for segmental duplications specifically, a real fix needs alignment-layer tools this
+    project doesn't currently use (graph-based realignment, or a T2T-CHM13-aware caller) — out of
+    scope for a hash-comparison pipeline, but worth naming as the actual root fix vs. what
+    metadata-tagging can paper over. The `difficultregion` tag GIAB already provides (segdups +
+    low-mappability + tandem-repeats) is doing real work here already (100% overlap for
+    `no_parental_match` vs. ~7.7% background, see Data facts) — the gap is that it's not yet used
+    for anything beyond passive annotation.
+12. Low-complexity flagging (`dustmasker` for CDS, `segmasker` for protein) → populate the
     `low_complexity_frac` column (schema already has it, `NULL` for all rows currently).
-11. Spot-check a handful of the 431 confident parent-of-origin calls by hand against the raw VCF
+13. Spot-check a handful of the 431 confident parent-of-origin calls by hand against the raw VCF
     records.
-12. *(Parked, low priority)* Theoretical-vs-observed codon usage (dNdScv/SnpEff/PAML) and
+14. *(Parked, low priority)* Theoretical-vs-observed codon usage (dNdScv/SnpEff/PAML) and
     possible-vs-observed synonymous SNVs on chr22 vs. gnomAD v4 — raise at the cDNA synonymous
     layer if/when relevant.
 
