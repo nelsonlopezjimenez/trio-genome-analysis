@@ -18,7 +18,12 @@ fi
 echo "==> Installing CLI tools via Homebrew"
 # mash is NOT in homebrew-core (removed from the old brewsci/bio tap, which is
 # deprecated) -- installed separately below from upstream GitHub releases.
-brew install samtools bcftools htslib blast python@3.12
+# awscli: for population-scale batch processing against public data mirrored on AWS
+# Open Data (e.g. s3://1000genomes) -- see HANDOFF.md's "Scaling to genome-wide and
+# population scale" section. Installing the CLI does NOT configure credentials or
+# provision any AWS resources; run `aws configure` separately with your own account's
+# access keys when you're ready to use it.
+brew install samtools bcftools htslib blast python@3.12 awscli
 
 echo "==> Installing mash (no homebrew-core formula; upstream release binary)"
 if command -v mash >/dev/null 2>&1; then
@@ -64,6 +69,7 @@ dustmasker -version-full
 segmasker -version-full
 "$HOME/venvs/trio-genome/bin/python" --version
 sqlite3 --version
+aws --version
 
 echo
 echo "Done. In VS Code / Jupyter, select kernel: 'Python (trio-genome, macOS)'"

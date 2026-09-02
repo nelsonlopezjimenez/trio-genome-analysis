@@ -78,10 +78,15 @@ data already in this repo, even though both are nominally "Ensembl."
   │  Full repo cleanup (stale/duplicate docs retired); notebooks 01→04 rerun on the Mac mini —
   │  exact byte-for-byte reproduction of the original Windows/WSL2 run confirmed
   │
-  2026-09-01  (today)
-  ▼  Empirical false-positive test on Track 1 (confirms it does NOT establish paternity — see
-     HANDOFF.md's Finding section); external validation against Ensembl (1341/1341 exact match,
-     chr22, both protein and CDS layers) — the two open "Not yet done" validation TODOs, closed
+  2026-09-01
+  │  Empirical false-positive test on Track 1 (confirms it does NOT establish paternity — see
+  │  HANDOFF.md's Finding section); external validation against Ensembl (1341/1341 exact match,
+  │  chr22, both protein and CDS layers) — the two open "Not yet done" validation TODOs, closed
+  │
+  2026-09-02  (today)
+  ▼  Genome-wide scale measured for real: whole-genome reference catalog builds in 13s, but
+     per-individual processing has a real bottleneck (~11.76s/individual on chr22 alone, a linear
+     variant scan) — now being fixed and refactored for parallel AWS batch processing
 ```
 
 ---

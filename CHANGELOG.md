@@ -9,6 +9,60 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-02 — Genome-wide scaling measured; per-individual bottleneck diagnosed; AWS options verified
+
+- **Real (not simulated) genome-wide timing**: ran the actual extraction+hashing pipeline against
+  the genome-wide GENCODE v46 files already on disk (never chr22-only, just chr22-filtered by the
+  existing code) — 64,414 validated transcripts, all isoforms, whole genome, unsalted *and*
+  salted, in **13.2 seconds total**. Measurement only, not persisted — no database was written to;
+  `data/derived/chr22/hash_catalog.db` is unchanged. Confirms hashing was never the bottleneck.
+- **Real per-individual timing, and the actual bottleneck found by inspection**: 11.76s to process
+  one individual (HG002) on chr22 alone — slower than building the *entire genome's* reference
+  catalog with zero individuals. Root cause: `variants_in_range()` linearly scans every variant in
+  the chromosome for every exon of every transcript (~670 million comparisons per individual on
+  chr22 alone) — a fixable software inefficiency, not an inherent cost. Extrapolated (with a
+  stated likely-underestimate caveat) to ~9.4 min/individual genome-wide, ~16.4 days for all 2,504
+  1000 Genomes individuals sequential/single-threaded/unoptimized.
+- **Data acquisition for population-scale sources, verified against the actual hosts**: 1000
+  Genomes high-coverage data has no per-sample genotype VCFs for this release (confirmed by
+  browsing the real FTP structure — only joint multi-sample files, chr1 alone 130GB); the same
+  joint VCFs are mirrored on AWS S3 Open Data (`s3://1000genomes`, confirmed by listing the bucket
+  directly) — zero egress cost, high throughput from a colocated EC2 instance; Aspera/FASP support
+  for this specific mirror checked and left unconfirmed (a documentation URL didn't resolve to
+  real content) rather than asserted either way.
+- **EC2 cost estimate for a full 1000-Genomes batch run**: ~$6–20 with today's unoptimized code
+  (spot pricing, colocated instance), likely under $5 once the indexing fix lands — noted as
+  approximate/typical pricing, not fetched live, but robust as an order-of-magnitude figure.
+- All of the above recorded in `HANDOFF.md` under a new "Scaling to genome-wide and population
+  scale" section.
+- **The fix landed and was verified the same day.** Added `scripts/batch_haplotype_hash.py`,
+  replacing `variants_in_range()`'s linear scan with a sorted-position index + `bisect` (sort each
+  individual's variants once per chromosome, binary-search per exon instead of rescanning every
+  variant every time). Measured on real HG002 chr22 data: the haplotype-extraction-and-hashing
+  phase dropped from ~11.7s to **0.03s — a ~390x speedup**. Correctness verified, not assumed:
+  cross-checked all 1,110 overlapping accessions against the existing, already-verified SQLite
+  catalog — **1,110/1,110 exact MD5 matches, zero mismatches** (2 extra rows in the new output are
+  expected and understood: parent-only-indel cases the old trio-wide check excluded that this
+  single-individual version correctly includes). Script is CLI-driven, writes an isolated
+  per-individual `.tsv.gz`, no shared-database writes — safe to run many in parallel. No salt
+  hardcoded, by design (see the earlier salt-secrecy discussion); pass one via `--salt`/
+  `HASH_SALT` or omit for unsalted-only output.
+- **Double-checked the AWS S3 data-access URL before relying on it further**: verified
+  `https://1000genomes.s3.amazonaws.com/1000G_2504_high_coverage/working/
+  20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.
+  recalibrated_variants.vcf.gz` with a real `bcftools view -h` call (not just a bucket listing) —
+  works end-to-end, same as the EBI FTP mirror.
+- Remaining before an actual EC2 run: provisioning/running on a real instance (today's
+  cost/timing figures are still estimates until one actually runs); the reference-catalog rebuild
+  (~3.1s) is now the dominant per-individual cost since the real bottleneck is fixed, and is
+  currently redundantly rebuilt on every invocation — a batch orchestrator should build it once
+  and reuse it across all individuals.
+- **AWS CLI installed** (`brew install awscli`, v2.36.37) and added to `scripts/setup_macos.sh`
+  for future machines. Explicitly not the same as provisioning anything: no AWS account or
+  credentials are connected to this environment, `aws configure` hasn't been run, and nothing has
+  been requested/authorized to spin up billable resources — that stays a separate, explicitly
+  confirmed step whenever it actually happens.
+
 ## 2026-09-01 — Empirical false-positive test for Track 1; salt-hashing evaluated; TODO expanded
 
 - **Documented finding: Track 1's classification does not confirm paternity, verified
@@ -72,6 +126,46 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   evidence-tier vocabulary) — meant to prevent silently mixing sources after a break. Also fixed
   the timeline's stale endpoint (still said "about to run notebooks" after that had already
   happened) to reflect today's two closed validation TODOs.
+- **Cross-platform `.fai` inconsistency found and fixed.** Diffing `chr22_cds.fa.fai` between the
+  Mac mini and the original Windows-generated file showed `LINEWIDTH` = 61 vs. 62 for the same
+  60-base line width. Root cause: `write_fasta()` used plain `open(path, "w")`, and Python
+  translates outgoing `\n` to the OS's native line separator on write (`\n` on macOS/Linux,
+  `\r\n` on Windows) unless `newline=""` is passed. Verified this was cosmetic, not a
+  sequence-correctness bug — zero `\r` bytes found in the Mac file, and `.fai`-based random access
+  already accounts for however many terminator bytes a given file actually has, which is exactly
+  why every cross-platform hash comparison this session matched despite the quirk existing the
+  whole time. Fixed anyway for portability: added `newline=""` to both
+  `notebooks/03_sqlite_catalog.ipynb`'s `write_fasta()` and `scripts/validate_against_ensembl.py`'s
+  `write_fasta_gz()`. No-op on the Mac (already LF); only matters if Windows is used again. Not
+  yet regenerated on disk — takes effect on the next notebook 03 rerun.
+- **Seven Track 2 research questions parked** (raised, not yet investigated, per explicit
+  request): CDS-restricted SNP relevance-ranking for ethnicity; existing public AIM-SNP
+  databases (plus a concrete finding — the 1000 Genomes VCFs already downloaded for the impostor
+  test already carry per-population AC/AF breakdowns, partial raw material for this already on
+  hand); SNP-hash window sizing (confirmed the >20nt uniqueness intuition matches the math behind
+  Mash's existing k≈21–31 choice); why sequence content alone can't resolve genomic
+  duplications (tied to the already-documented `ENSG00000100033` difficultregion case);
+  microarray/CNV data as a separate ingestion path, not a hash-catalog extension; short- vs.
+  long-read tradeoffs for ancestry specifically (vs. SV/CNV work); and two future directions —
+  hash-based population classification, and a new not-yet-scoped functional-significance
+  extension. Recorded in `HANDOFF.md` with enough context to act on later.
+- **Client-lookup service architecture for salted hashes — evaluated, decision deliberately left
+  open.** Extended the earlier salt evaluation with a concrete design for letting a client check
+  their own DNA against a published salted-hash catalog without exposing the private
+  gene/accession mapping. Two-database structure (public salted-hash-only list + private mapping
+  table) is settled. The protocol for how the client computes a matching salted hash is not: salt
+  embedded in client-side software (raw sequence never leaves the client's machine, but the salt
+  itself is only weakly secret against reverse-engineering) vs. server issues a per-session salt
+  and the client hashes-and-sends-back (analyzed in detail — this fails to protect client data,
+  because the server already knows its own salt and can run a candidate/dictionary attack using
+  publicly cataloged human variation, which is small and enumerable per locus; only genuinely
+  novel, uncataloged variants stay protected this way, which is a minority of any real genome).
+  Recorded in `HANDOFF.md` as a real, non-obvious finding — unique-per-client salting does not
+  fix this, since it only raises the cost for a third-party eavesdropper, not the server itself.
+  No protocol was found that gives both "a third party computes and compares correctly" and "raw
+  sequence known only to the client" without heavier machinery (Private Set Intersection,
+  homomorphic encryption, trusted-execution enclave) — named as the real answer if this property
+  turns out to be a hard requirement, not pursued further for now.
 
 ## 2026-08-31 — Retired v3_commit_guide.md; README's v1→v3 section brought current
 

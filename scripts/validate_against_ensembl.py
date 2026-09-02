@@ -51,7 +51,9 @@ def load_ensembl_fasta(path, chrom_tag):
 
 
 def write_fasta_gz(path, records):
-    with gzip.open(path, "wt") as fh:
+    # newline="" forces LF-only output regardless of OS -- see notebooks/03_sqlite_catalog.ipynb's
+    # write_fasta for the full explanation (Windows would otherwise write CRLF here too).
+    with gzip.open(path, "wt", newline="") as fh:
         for acc, seq in records:
             fh.write(f">{acc}\n")
             for i in range(0, len(seq), 60):

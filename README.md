@@ -60,6 +60,11 @@ annotation-defined and fuzzy while CDS boundaries (start codon → stop codon) a
    (no WSL2 needed anymore), matching the original Windows/WSL2 run byte-for-byte: same row
    counts, an identical MD5 hash for a spot-checked accession, and the identical Track 1
    classification breakdown above. Details: [`HANDOFF.md`](HANDOFF.md).
+9. **Genome-wide scale measured, population-scale batch processing in progress** (2026-09-02) —
+   the reference catalog builds genome-wide (all isoforms, unsalted + salted) in ~13 seconds; a
+   real per-individual bottleneck was found and is being fixed, with a refactor underway for
+   parallel AWS batch processing across public cohorts (1000 Genomes, GIAB, T2T). Details and cost
+   estimates: [`HANDOFF.md`](HANDOFF.md).
 
 ### Why phasing matters here
 
