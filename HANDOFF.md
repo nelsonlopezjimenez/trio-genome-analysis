@@ -980,6 +980,24 @@ on the Mac mini during the impostor test), just leaves its on-AWS wall-clock num
 an alternate install path (source build, conda, or `pip install pysam` with build deps) before
 that specific number can be measured — not attempted yet, deliberately kept this test light.
 
+**bcftools install path solved, and the real BED-restricted fetch timing measured, 2026-09-03**:
+`micromamba` (bioconda's official static package manager, no compilation needed) installs
+`bcftools 1.24` cleanly on Amazon Linux 2023 in well under a minute of actual install time. One
+real snag hit and fixed along the way: this AMI's `tar` shells out to an external `bzip2` binary
+that isn't installed by default, so extracting micromamba's `.tar.bz2` release failed
+(`tar (grandchild): bzip2: Cannot exec`) — worked around by using Python's `tarfile` module
+instead (bzip2 support built into the standard library, no external binary dependency). With
+`bcftools` working, ran the actual technique — BED-restricted, single-sample chr22 CDS fetch
+(sample NA19240, same as the impostor test, `-R data/reference/cds_regions/chr22_cds_regions.bed
+-s NA19240`) directly against the S3 URL: **~8 minutes wall-clock** (started 18:23, finished
+18:31 UTC, confirmed via the `bcftools` process's accumulated CPU time and the output file's
+completion), producing a valid 3.2MB `.vcf.gz` with **27,876 variants**. Compare to the ~40
+minutes previously measured for the *unrestricted* full-chr22 fetch of the same
+individual/chromosome (same 0.57%-of-chromosome target) — BED-restriction is still doing real
+work even at AWS-colocated speed, consistent with the CPU-bound-not-bandwidth-bound diagnosis
+above. This is now a real number, not an extrapolation, backing Phase 2's per-individual fetch
+cost estimate.
+
 **Phase 2 output catalog schema, DECIDED 2026-09-03**: per-individual output loads into a new
 `individual_hash_catalog.db`, kept separate from the existing `hash_catalog.db` (reference-only,
 unsalted) per earlier instruction — not merged into it. One flat table, not split across

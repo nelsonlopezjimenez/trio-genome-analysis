@@ -9,6 +9,28 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — bcftools solved via micromamba; real BED-restricted fetch timing measured
+
+- **`scripts/aws/test_s3_fetch.sh` updated**: replaced the failed `dnf install bcftools` attempt
+  (not in AL2023's default repos) with `micromamba` (bioconda's static package manager) — clean
+  install, `bcftools 1.24`, well under a minute of actual install time.
+- **Real snag hit and fixed**: AL2023's `tar` shells out to an external `bzip2` binary not
+  installed by default, so extracting micromamba's release archive failed
+  (`tar (grandchild): bzip2: Cannot exec`). Fixed by using Python's `tarfile` module instead
+  (bzip2 support is built into the standard library — no external binary needed).
+  Also caught the same `${1:?...}`-apostrophe-in-double-quotes bash parsing quirk hit earlier
+  this project in a different script — avoided by not using a contraction in the error message.
+- **Real BED-restricted single-sample fetch timing, finally measured**: ran the actual technique
+  (`bcftools view -s NA19240 -R chr22_cds_regions.bed <S3 URL>`) directly on a colocated `us-east-1`
+  instance — **~8 minutes wall-clock**, producing a valid 3.2MB `.vcf.gz` with 27,876 variants.
+  Compare to the ~40 minutes previously measured for the same individual/chromosome *without*
+  region restriction — confirms BED-restriction is still doing real, necessary work even at
+  AWS-colocated network speed, consistent with the earlier CPU-bound-parsing diagnosis (not a
+  bandwidth problem). This replaces an extrapolation with a real number for Phase 2's
+  per-individual fetch cost.
+- Instance ran longer than the earlier smoke tests (~15 min total including the install), still
+  a few cents; terminated and confirmed stopped immediately after.
+
 ## 2026-09-03 — Phase 2 scope clarified; genome-wide CDS BED files generated; catalog schema decided
 
 - **Real inconsistency caught and fixed**: `scripts/aws/README.md`'s Phase 2 plan literally said
