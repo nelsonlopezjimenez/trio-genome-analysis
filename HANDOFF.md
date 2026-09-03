@@ -966,8 +966,19 @@ preinstalled), not just locally. Instance terminated immediately after, confirme
 at test time (`InsufficientInstanceCapacity`) — `launch_smoke_test.sh` now launches **on-demand**
 by default (~$0.17/hr vs. spot's ~$0.05/hr; irrelevant at smoke-test scale, worth revisiting for
 Phase 2 where wall-clock hours are non-trivial and retrying spot or falling back across AZs may
-be worth the complexity). **Still not tested**: fetching from `s3://1000genomes` directly on an
-instance — deliberately deferred per `scripts/aws/README.md`, next natural check before Phase 2.
+be worth the complexity).
+
+**S3 fetch tested directly on an instance, 2026-09-03** (`scripts/aws/test_s3_fetch.sh`):
+bucket reachability confirmed (public, no credentials needed, `200 OK`, same as from the Mac
+mini); real throughput measured at **~62 MB/s (~500 Mbps)** for a 100MB byte-range fetch,
+colocated in `us-east-1` — the first *measured* number behind the "colocated instance is fast"
+reasoning the cost/timing estimates above were resting on. **Not measured**: the actual
+BED-restricted single-sample slice technique's on-AWS timing — `bcftools` isn't available via
+Amazon Linux 2023's default `dnf` repos (`No match for argument: bcftools`), so Step 3 of that
+test script was skipped. This doesn't cast doubt on the technique itself (already proven correct
+on the Mac mini during the impostor test), just leaves its on-AWS wall-clock number open. Needs
+an alternate install path (source build, conda, or `pip install pysam` with build deps) before
+that specific number can be measured — not attempted yet, deliberately kept this test light.
 
 > ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
 > `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a

@@ -9,6 +9,23 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — S3 fetch tested directly on an instance
+
+- **`scripts/aws/test_s3_fetch.sh`**: launched a second `c6i.xlarge` instance to test the one
+  thing Phase 1 deliberately deferred — fetching from `s3://1000genomes` on the instance itself,
+  not just from the Mac mini.
+- **Bucket reachability confirmed from inside AWS**: `200 OK`, no credentials needed, same as
+  the earlier Mac mini check.
+- **Real throughput measured, not estimated**: 100MB byte-range fetch in 1.62s ≈ **~62 MB/s
+  (~500 Mbps)**, colocated in `us-east-1`. First actual data point behind the "colocated instance
+  is fast" reasoning the Phase 2 cost/timing estimates in `HANDOFF.md` were resting on.
+- **BED-restricted single-sample slice technique (the actual per-individual fetch method used in
+  the impostor test) could not be timed on-instance**: `bcftools` isn't in Amazon Linux 2023's
+  default `dnf` repos (`No match for argument: bcftools`). Correctness of the technique itself
+  isn't in question (already proven on the Mac mini); only its on-AWS wall-clock time remains
+  unmeasured, pending an alternate install path (source build / conda / `pysam` via pip).
+- Instance terminated immediately after, confirmed stopped.
+
 ## 2026-09-03 — Phase 1 AWS smoke test: passed
 
 - **AWS credentials configured and verified** on the Mac mini: IAM user `nelson-admin` (not
