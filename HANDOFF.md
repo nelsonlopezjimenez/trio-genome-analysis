@@ -694,9 +694,10 @@ hours sequential across all 2,504 individuals, or **under 7 minutes** paralleliz
 instance. Directly answers "how many days for calculations and storing in the catalog": none —
 minutes, not days, even without parallelization being especially efficient.
 
-**Total time and cost — range, not a point estimate, since parallel fetch efficiency on a
-64-vCPU instance hasn't actually been measured yet** (only one fetch has ever been run at a
-time):
+**Total time and cost, per-individual-remote-fetch architecture — SUPERSEDED below by the
+bulk-fetch architecture (see further down), kept as the honest fallback comparison, not deleted.**
+Range, not a point estimate, since parallel fetch efficiency on a 64-vCPU instance hasn't
+actually been measured for this architecture (only one fetch has ever been run at a time):
 
 | Scenario | Effective parallel fetches | Wall-clock | Cost (~$2.7/hr on-demand `c6i.16xlarge`†) |
 |---|---|---|---|
@@ -714,16 +715,42 @@ was always described as "the workload is embarrassingly parallel," but it was pr
 for convenience; it's now the difference between ~1.85 years and ~10–42 days, i.e. no longer
 optional for feasibility at all.
 
-**A real, unevaluated optimization worth investigating before committing to Phase 2 as currently
-scoped**: right now, each of 2,504 individuals independently re-fetches overlapping CDS regions
-from the *same* giant joint-called VCF, 2,504 separate times — massively redundant remote work.
-An alternative: download each chromosome's CDS-restricted slice **once** (still all 2,504
-samples, just region-restricted — a bulk, one-time remote fetch), then extract each individual
-locally via `bcftools view -s` against that one local file — turning an O(2,504) *remote* fetch
-cost into one remote fetch plus O(2,504) *local* slices, which should be far cheaper per
-individual (no network round-trip or S3 per-request overhead, governed by local disk I/O
-instead). Not yet measured or built — worth a small real test before assuming either the
-above range or this alternative, rather than guessing which is actually faster.
+**TESTED AND CONFIRMED, 2026-09-03 — bulk-fetch architecture is dramatically better, not just
+theoretically appealing.** Real test on a live instance: one bulk fetch of chr22's CDS regions
+across **all 2,504 samples** (`bcftools view -R chr22_cds_regions.bed <S3 URL>`, no `-s` sample
+restriction) took **~9 minutes**, producing a 359MB file (gzip-verified intact, 27,876 variants —
+same site count as the single-sample fetch, as expected). From that one **local** file, extracting
+individual samples via `bcftools view -s <sample>` took **~10.7s average**, measured across three
+different real samples (NA19240, NA12878, HG00096) — remarkably consistent regardless of which
+individual. **Per-individual, chr22-only: 480s (old, one remote fetch per person) vs 10.93s (new,
+amortized bulk fetch + local slice) — a measured 43.9× speedup**, not an estimate.
+
+The reason this works so well: the earlier diagnosis (region *count* drives cost, not data
+volume, since each fetch is CPU/latency-bound on ~4,186 small HTTP range requests, not
+bandwidth-bound) predicted this — the bulk fetch pulled 112× more bytes (359MB vs 3.2MB) for
+essentially the same wall-clock time (~9 min vs ~8 min), because the number of regions, not
+sample count, is what actually costs time remotely. Local slicing afterward has no network
+round-trips at all, so it's governed by local disk I/O + decompression, which is fast and — more
+importantly — doesn't scale with 2,504 *separate* S3 interactions, just 2,504 *local* ones.
+
+**Genome-wide, extrapolated with the same ×48.46 scaling factor used throughout** (not
+independently re-measured for other chromosomes — same caveat as elsewhere: chr1's much larger
+underlying file could scale differently than region-count alone predicts):
+- One-time bulk fetch, all chromosomes: **~7.3 hours** (not yet tested whether this can itself be
+  parallelized per-chromosome across cores — plausible, would shrink this further, not evaluated)
+- Local slicing, all 2,504 individuals, parallelized 64×: **~5.6 hours**
+- **Total wall-clock: ~12.9 hours (~0.5 days)** — vs. the ~10.5–42 day range above
+- **Total cost: ~$35** — vs. the ~$680–$2,730 range above
+- **20–78× faster**, and disk space for all chromosomes' bulk files: only **~17.4GB**, trivially
+  provisioned
+
+**This changes the recommended Phase 2 architecture, not just its cost estimate.** The
+per-individual-remote-fetch numbers above are kept for the record and as the honest fallback if
+this doesn't hold up at full genome-wide scale, but bulk-fetch-then-local-slice is now the clear
+default plan pending that confirmation. **Not yet built**: neither `batch_haplotype_hash.py` nor
+`phase2_deploy.sh` currently implement this two-stage pattern — both still assume a per-individual
+remote VCF path. Adapting them (accept a local bulk VCF + sample ID instead of triggering a fresh
+remote fetch per invocation) is real, if straightforward, work still ahead of Phase 2.
 
 ---
 

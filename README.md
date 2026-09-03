@@ -62,11 +62,12 @@ annotation-defined and fuzzy while CDS boundaries (start codon → stop codon) a
    classification breakdown above. Details: [`HANDOFF.md`](HANDOFF.md).
 9. **Genome-wide scale measured, AWS batch tooling built and verified, Phase 2 pending
    go-ahead** (2026-09-02/03) — the reference catalog builds genome-wide in ~13 seconds; the
-   per-individual bottleneck was found and fixed (~390x speedup). Phase 1 AWS smoke test passed
-   on real infrastructure; per-individual S3 fetch measured directly and the cost/timing estimate
-   corrected accordingly (fetch, not compute, dominates — realistic range ~10.5–42 days,
-   ~$680–$2,730 for the full population-scale batch). Details and cost estimates:
-   [`HANDOFF.md`](HANDOFF.md).
+   per-individual compute bottleneck was found and fixed (~390x speedup). Phase 1 AWS smoke test
+   passed on real infrastructure. Per-individual S3 fetch measured directly, then a bulk-fetch
+   architecture (one fetch for all 2,504 samples, then fast local per-individual slicing) tested
+   and confirmed **~44x faster per individual** — full population-scale batch now estimated at
+   **~13 hours, ~$35**, down from an initial corrected estimate of ~10.5–42 days, ~$680–$2,730 for
+   the naive per-individual-remote-fetch approach. Details: [`HANDOFF.md`](HANDOFF.md).
 
 ### Why phasing matters here
 

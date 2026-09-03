@@ -92,12 +92,15 @@ data already in this repo, even though both are nominally "Ensembl."
   ▼  Phase 1 AWS smoke test passed on real infrastructure; genome-wide CDS-region BED files
      generated (201,612 regions, all 24 chromosomes); individual_hash_catalog.db schema built
      and verified; bcftools solved via micromamba, baked into a custom "golden" AMI.
-     ★ Cost/timing estimate CORRECTED ★ — the old "$6–20, hours not days" figure only ever
-     counted compute time. Real per-individual S3 fetch now measured (~8 min, chr22) and
-     extrapolated genome-wide (~48x, two independent methods converge): fetch dominates by
-     3–4 orders of magnitude over compute. Realistic range for the full batch, parallelized on
-     one 64-vCPU instance: ~10.5–42 days, ~$680–$2,730 — see HANDOFF.md's corrected cost
-     section. Phase 2 (the actual batch run) still not started, needs explicit go-ahead.
+     ★ Cost/timing estimate CORRECTED, then CORRECTED AGAIN ★ — the old "$6–20, hours not
+     days" figure only ever counted compute time. Real per-individual S3 fetch measured (~8 min,
+     chr22), extrapolated genome-wide: fetch dominates compute by 3–4 orders of magnitude,
+     ~10.5–42 days / ~$680–$2,730 for the naive per-individual-remote-fetch approach. Then a
+     bulk-fetch architecture (one fetch for all 2,504 samples, fast local per-individual slicing
+     afterward) was tested for real and confirmed **~44x faster per individual** — full batch now
+     estimated at **~13 hours, ~$35**. See HANDOFF.md's cost section for the full chain. Phase 2
+     itself (the actual batch run) still not started, needs explicit go-ahead; the bulk-fetch
+     pattern isn't yet wired into batch_haplotype_hash.py/phase2_deploy.sh either.
 ```
 
 ---

@@ -9,6 +9,33 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Bulk-fetch architecture tested: ~44x faster per individual, confirmed for real
+
+- **Tested the alternative flagged in the previous entry**: instead of each of 2,504 individuals
+  independently re-fetching overlapping CDS regions from the same remote joint-called VCF, fetch
+  **once** for all 2,504 samples, then slice each individual **locally** from that one file.
+- **Real measurement, on a live instance**: bulk fetch of chr22's CDS regions (all 2,504 samples,
+  same 4,186 regions as before) took **~9 minutes**, producing a 359MB file (gzip-verified,
+  27,876 variants — same site count as the single-sample fetch, as expected). Local per-individual
+  extraction from that file (`bcftools view -s <sample>`) took **~10.7s average**, measured
+  across three different real samples (NA19240, NA12878, HG00096) — consistent regardless of
+  which individual.
+- **Per-individual, chr22-only: 480s (old) vs 10.93s (new) — a measured 43.9x speedup**, not an
+  estimate. Confirms the earlier diagnosis: cost is driven by region *count* (same ~4,186 either
+  way), not data volume (112x more bytes transferred for essentially the same wall-clock time).
+- **Genome-wide, extrapolated with the same convergent ×48.46 scaling factor used throughout**:
+  one-time bulk fetch ~7.3 hours (all chromosomes); local slicing, all 2,504 individuals,
+  parallelized 64x, ~5.6 hours. **Total: ~12.9 hours (~0.5 days), ~$35** — vs. the previous
+  entry's corrected-but-still-costly ~10.5–42 days / ~$680–$2,730. A 20–78x further improvement.
+  Disk space for all chromosomes' bulk files: only ~17.4GB.
+- **Not yet built**: neither `batch_haplotype_hash.py` nor `phase2_deploy.sh` implement this
+  two-stage pattern yet — both still assume a per-individual remote fetch. Real, if
+  straightforward, work remains before Phase 2 can actually use this architecture.
+- `HANDOFF.md`, `README.md`, and `PROJECT_MAP.md` updated; the per-individual-remote-fetch
+  numbers from the previous entry kept as the honest fallback comparison, not deleted.
+- Test instance terminated immediately after; total AWS cost for this test: a few cents (~15 min
+  wall-clock on one `c6i.xlarge`).
+
 ## 2026-09-03 — Cost/timing estimate corrected: fetch, not compute, dominates
 
 - **Caught and fixed a real error in the standing cost estimate**: the old "$6–20, hours not
