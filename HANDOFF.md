@@ -1,6 +1,6 @@
 # Handoff — Trio Genome Analysis
 
-**Last updated: 2026-09-02**
+**Last updated: 2026-09-03**
 
 This is the one living document for current project state. For dated history, see
 [`CHANGELOG.md`](CHANGELOG.md) (append-only, newest first). This file gets edited in place —
@@ -948,16 +948,32 @@ individual, e.g. via GNU parallel or a job array. No salt is hardcoded (see the 
 discussion above for why that would defeat the point) — pass one via `--salt` or `HASH_SALT`.
 **Verified, not assumed**: the AWS S3 mirror URL (`https://1000genomes.s3.amazonaws.com/...`) was
 checked end-to-end with a real `bcftools view -h` call, not just a bucket listing.
-**Not yet done**: actually provisioning and running on an EC2 instance (the cost/timing estimates
-above are still estimates until a real instance runs this); the reference-catalog rebuild
-(currently ~3.1s, now the dominant cost per individual since the real bottleneck is fixed) is
-redundantly rebuilt on every invocation — a batch orchestrator should build it once and reuse it
-across all individuals rather than have each process rebuild it independently.
+**Not yet done**: the reference-catalog rebuild (currently ~3.1s locally, ~7.3s on the smoke-test
+instance, now the dominant cost per individual since the real bottleneck is fixed) is redundantly
+rebuilt on every invocation — a batch orchestrator should build it once and reuse it across all
+individuals rather than have each process rebuild it independently.
+
+**Phase 1 AWS smoke test: done and passed, 2026-09-03.** `scripts/aws/` (`launch_smoke_test.sh`,
+`deploy_and_test.sh`, `terminate.sh`, `README.md`) launches one instance, deploys the minimal
+file set (~92MB: both scripts + GENCODE reference + one real individual's chr22 VCF), runs
+`batch_haplotype_hash.py --mode iupac` on it, and diffs the result against the already-verified
+local hash. Result: **byte-identical** — `ENST00000319363.11` → `hash_md5=3bbd34fa...`,
+`het_count=5`, matching the Mac mini run exactly. 631 hashes written, 687 no-variant + 23
+indel-containing transcripts correctly skipped, full pipeline ran in 7.76s on-instance. This
+confirms the pipeline is correct on real AWS Linux (Amazon Linux 2023, Python 3.9.25
+preinstalled), not just locally. Instance terminated immediately after, confirmed stopped.
+**One real deviation from plan**: `c6i.xlarge` **spot** capacity was unavailable in `us-east-1`
+at test time (`InsufficientInstanceCapacity`) — `launch_smoke_test.sh` now launches **on-demand**
+by default (~$0.17/hr vs. spot's ~$0.05/hr; irrelevant at smoke-test scale, worth revisiting for
+Phase 2 where wall-clock hours are non-trivial and retrying spot or falling back across AZs may
+be worth the complexity). **Still not tested**: fetching from `s3://1000genomes` directly on an
+instance — deliberately deferred per `scripts/aws/README.md`, next natural check before Phase 2.
 
 > ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
 > `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a
 > local-exploration salt only. Generate a fresh salt for the actual population-scale AWS batch
-> run — don't reuse the exploration one for real output.
+> run — don't reuse the exploration one for real output. The Phase 1 smoke test above used no
+> salt at all (mechanics test only, not real output).
 ~~1. Validate the MD5/sha512t24u hashing pipeline against a known-good external reference~~ —
 **done 2026-09-01, chr22, full match.** See
 [External validation against Ensembl](#external-validation-against-ensembl-2026-09-01) below for

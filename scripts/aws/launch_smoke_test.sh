@@ -56,16 +56,16 @@ else
     echo "    reusing existing $SG_ID"
 fi
 
-echo "==> Launching instance"
+echo "==> Launching instance (on-demand -- spot capacity for $INSTANCE_TYPE was unavailable"
+echo "    in $REGION at smoke-test time, 2026-09-03; on-demand trades a few cents for reliability)"
 INSTANCE_ID="$(aws ec2 run-instances --region "$REGION" \
     --image-id "$AMI_ID" \
     --instance-type "$INSTANCE_TYPE" \
     --key-name "$KEY_NAME" \
     --security-group-ids "$SG_ID" \
-    --instance-market-options '{"MarketType":"spot"}' \
     --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=trio-genome-smoke-test}]' \
     --query 'Instances[0].InstanceId' --output text)"
-echo "    $INSTANCE_ID (spot instance)"
+echo "    $INSTANCE_ID (on-demand instance)"
 
 echo "==> Waiting for it to be running..."
 aws ec2 wait instance-running --region "$REGION" --instance-ids "$INSTANCE_ID"

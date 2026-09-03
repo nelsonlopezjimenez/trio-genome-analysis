@@ -9,6 +9,33 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Phase 1 AWS smoke test: passed
+
+- **AWS credentials configured and verified** on the Mac mini: IAM user `nelson-admin` (not
+  root), region corrected from a stray `us-west-2` default to `us-east-1` (colocated with
+  `s3://1000genomes`, verified 2026-09-02). New EC2 key pair `trio-genome-aws` created.
+- **`scripts/aws/` smoke test run end-to-end for real**: launched one `c6i.xlarge` instance,
+  deployed the minimal file set (~92MB: `gencode_cds_extract.py`, `batch_haplotype_hash.py`,
+  GENCODE v46 reference, HG002's chr22 phased VCF), ran `batch_haplotype_hash.py --mode iupac`
+  on the instance, pulled the result back, and diffed against the already-verified local hash.
+  **Result: byte-identical** — `ENST00000319363.11` → `hash_md5=3bbd34faba73bc134825f8f07a296436`,
+  `het_count=5`, matching the Mac mini exactly. 631 hashes written, 687 no-variant + 23
+  indel-containing transcripts correctly skipped, full run took 7.76s on-instance (Amazon Linux
+  2023, Python 3.9.25 preinstalled, no setup needed). Instance terminated immediately after,
+  confirmed stopped — total wall time ~10 minutes, cost a few cents.
+- **Real deviation from plan, now fixed in the script**: requested spot capacity for
+  `c6i.xlarge` in `us-east-1` was unavailable (`InsufficientInstanceCapacity`) at test time.
+  `launch_smoke_test.sh` was changed to launch **on-demand** by default rather than spot — a
+  small cost increase (~$0.17/hr vs. ~$0.05/hr) traded for launch reliability, acceptable at
+  smoke-test scale; worth reconsidering for Phase 2 (retry/fallback logic) where wall-clock
+  hours are non-trivial.
+- Confirms the compute pipeline — not just the algorithm — runs correctly on real AWS
+  infrastructure, extending the project's established cross-platform reproduction pattern
+  (Windows/WSL2 → Mac mini, 2026-08-31) one hop further: Mac mini → AWS.
+- Still deliberately untested: fetching data directly from `s3://1000genomes` on an instance
+  (see `scripts/aws/README.md`); Phase 2 (the real population-scale batch) remains un-started,
+  needs its own explicit go-ahead and a freshly-generated salt.
+
 ## 2026-09-02 — Genome-wide scaling measured; per-individual bottleneck diagnosed; AWS options verified
 
 - **Real (not simulated) genome-wide timing**: ran the actual extraction+hashing pipeline against
