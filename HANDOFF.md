@@ -712,10 +712,103 @@ Using the real numbers above, spot pricing, and an instance colocated with `s3:/
 - Demo idea (not built): same 1000G+HGDP chr22 samples, PCA on genome-wide/chr22-all SNPs vs.
   coding-only (ideally synonymous/4-fold) SNPs, side by side — expect tight super-pop clusters
   in the first, blurred in the second.
-- Optional side layer (not built), originally scoped for Track 1 but now the leading candidate
-  for Track 2's own unphased-representation question (see Active TODO #4): IUPAC
-  genotype-fingerprint collapse (phase-free, detects heterozygosity presence without phasing) —
-  separate namespace, nucleotide-only, biallelic SNVs only, never compared to reference hashes.
+- **DECIDED, 2026-09-02: IUPAC-collapsed genotype representation, not paternal/maternal-separated
+  haplotypes, for Track 2.** One phase-free sequence per person per CDS (heterozygous positions
+  become the IUPAC ambiguity code — R/Y/S/W/K/M for biallelic SNVs — homozygous positions keep
+  the actual base), instead of two separately-hashed haplotypes. Reasoning, not just preference:
+  1. **Paternal/maternal labeling mostly doesn't exist for the data ancestry work actually
+     needs.** It requires trio genotyping (both parents sequenced); 1000 Genomes/HGDP/gnomAD are
+     overwhelmingly unrelated individuals with no parent samples to derive it from. GIAB's trio
+     (Track 1) is the special case, not the norm for population panels.
+  2. **Ancestry signal doesn't use phase at all.** PCA/ADMIXTURE/F_ST operate on allele
+     frequencies or genotype dosage, never on which physical chromosome copy an allele sits on —
+     carrying phase into the catalog carries data no downstream ancestry method will ever read.
+  3. **Genotype is universal; phase isn't, and this project already measured the real gap it
+     causes**: 75/1,341 chr22 transcripts are excluded as `phase_incomplete` in the phased
+     approach (see Data facts) — every one of those is usable with IUPAC collapse, which needs no
+     phase resolution at all.
+  4. **Two arbitrarily-labeled hashes create a label-swap comparison problem IUPAC has no
+     version of.** Even where population-level statistical phasing exists (1000 Genomes provides
+     it), "haplotype 1" and "haplotype 2" are arbitrary algorithm output, not parent-of-origin —
+     comparing person A's hash-1 against person B's hash-1 has no guaranteed correspondence
+     without also checking the swapped pairing. One IUPAC value per person per locus has no such
+     ambiguity.
+  - **Honest counter-case, not ignored**: population-*phased* haplotypes (correctly ordered, not
+    parent-labeled) do carry more signal for haplotype-sharing methods (chromosome painting,
+    local ancestry inference like RFMix) that detect shared ancestry through identical-by-descent
+    haplotype blocks. Not pursued here for two reasons: it needs population-level statistical
+    phasing infrastructure this project doesn't have, and — the larger issue — exact-match
+    hashing can't do partial haplotype-sharing comparison at all regardless of phasing quality,
+    the same avalanche-effect limitation that's already the reason Track 2 is planned around
+    MinHash/Mash rather than exact hashes for distance work.
+  - Design constraints carried over from the original scoping: separate namespace (never compared
+    to the canonical unsalted GENCODE reference hashes — naturally true anyway, since a sequence
+    containing R/Y/S/W/K/M isn't valid ACGT and would never collide with the pure-ACGT reference
+    catalog, but labeled explicitly rather than left as an accident of the hash space);
+    nucleotide-only (not applied to protein sequences); biallelic SNVs only (already guaranteed
+    by the existing multiallelic/indel exclusion upstream of this step).
+  - **Implemented and verified same day** in `scripts/batch_haplotype_hash.py` (`--mode iupac`,
+    now the default; `--mode haplotypes` keeps the original Track 1 behavior available).
+    Verified two ways on real HG002 chr22 data, not just run once and trusted:
+    (a) `--mode haplotypes` re-checked against the already-verified SQLite catalog after this
+    refactor — still 1,110/1,110 exact MD5 matches, confirming the mode split didn't regress the
+    existing behavior; (b) the IUPAC output was independently cross-validated by reconstructing
+    the expected IUPAC sequence directly from the two already-verified, previously-published
+    haplotype hashes (`ENST00000319363.11`, hap0=`186a8719...`/hap1=`1584973f...`, matching the
+    notebook 04 worked example exactly) — comparing them position-by-position and applying the
+    IUPAC table independently of `build_iupac_collapsed()` produced an identical MD5
+    (`3bbd34fa...`) to what the actual function computed. Two independent derivation paths, same
+    answer. On chr22: 631 transcripts get a usable IUPAC hash with **zero** phase-related
+    exclusions (vs. 556 in `--mode haplotypes`, which still loses 75 to `phase_incomplete`).
+  - **Exploratory run kept as a separate file, deliberately not merged into the catalog**:
+    `data/derived/chr22/HG002_chr22_iupac.tsv.gz` (631 rows, `--salt 'TodayI$Miercole$'` — a
+    local-exploration salt only, see the AWS TODO below) and
+    `data/derived/chr22/SALT_DO_NOT_COMMIT.txt`. Both confirmed gitignored before creation, not
+    assumed (`data/derived/` is unconditionally excluded). No merge-into-`hash_catalog.db` step
+    exists yet — the schema doesn't even have a `seq_type` value for this (`CHECK` constraint
+    only allows `'AA','CDS','cDNA','exon'`) or a `salted_hash` column; that stays a deliberate,
+    separate future step, not done here.
+  - **Row ordering, confirmed against real coordinates**: genomic position along the chromosome,
+    not transcript ID — verified by cross-referencing the first several rows' genomic start
+    positions in the real GTF (strictly increasing: 16,590,751 → 16,783,412 → ... → 17,085,000).
+    Traced to the source: GENCODE ships its GTF pre-sorted by coordinate;
+    `parse_gtf_chrom()`/`build_catalog()`/`process_individual()` all just iterate in that same
+    order without ever re-sorting, so the ordering is inherited from the reference file, not
+    something chosen in this code.
+  - **`het_count` column, verified against the actual sequence, not just the code**: count of
+    positions that became an IUPAC ambiguity code (heterozygous sites), *not* total variant
+    count — homozygous-alt sites are counted in the underlying variant set but get the plain ALT
+    base, not a code, so they don't increment `het_count`. Confirmed by reconstructing
+    `ENST00000319363.11`'s actual hashed sequence and counting literal `R`/`Y`/`S`/`W`/`K`/`M`
+    letters by position: exactly 5, matching the reported `het_count=5` one-for-one.
+  - **Clarified: zygosity (hom/het) needs no parental data at all — a different problem from
+    phasing.** Easy to conflate given how much of this project is about phasing, so worth being
+    precise: hom/het status is ordinary genotype calling from an individual's own sequencing
+    reads (allele balance at each site) against the reference — it needs no relatives' data
+    whatsoever, and is already present as the `GT` field in every VCF this project uses (`0/0`
+    hom-ref, `0/1` het, `1/1` hom-alt), computed by the original data providers before reaching
+    this repo. What genuinely *does* need family or population-reference data is **phasing** —
+    knowing which physical chromosome copy carries which allele across multiple het sites — a
+    fundamentally harder, separate problem. This distinction is exactly why IUPAC collapse works
+    at population scale where phasing often doesn't: zygosity is universal, phase isn't.
+  - **Why homozygous-alt sites carry real, distinct ancestry signal, not just "more of the same
+    heterozygous signal"**:
+    1. Standard ancestry methods (PCA/ADMIXTURE) encode genotypes as *dosage* (0/1/2 copies of
+       the alt allele), not presence/absence — hom-alt (dosage 2) carries more weight than het
+       (dosage 1). Under Hardy-Weinberg, for an allele at population frequency *q*, hom-alt
+       occurs at rate *q²* vs. heterozygotes at *2q(1−q)* — for a rare, population-differentiating
+       allele, being hom-alt is a much lower-probability, more informative event (both parental
+       lineages carried it), not a redundant doubling of the het signal.
+    2. **Runs of homozygosity (ROH)** are their own distinct demographic/ancestry signal — long
+       stretches of consecutive homozygous genotypes reflect identical-by-descent regions, more
+       common in populations with smaller effective population size or founder effects.
+       Concretely relevant to data already in this repo: Ashkenazi Jewish populations (HG002/3/4's
+       own background) are a documented example of measurably elevated ROH from a founder effect,
+       a signal additional to and distinct from standard continental-ancestry PCA.
+    3. Specific to this project's own representation: hom-alt/hom-ref positions keep a fully
+       specific plain base in the hashed sequence, while het positions fold into a coarser IUPAC
+       code — so homozygous positions preserve slightly cleaner per-position signal in this exact
+       encoding than heterozygous ones do.
 
 ### Parked research questions (raised 2026-09-01, not yet investigated)
 
@@ -780,6 +873,32 @@ answered in depth yet, per explicit request to park them.
    to *functional* significance (e.g. ClinVar, gnomAD constraint scores, VEP-style consequence
    prediction), which is a different question from ancestry entirely and would need its own
    design pass when picked up.
+8. **Would protein (AA) sequences offer any advantage over CDS/nucleotide for ethnicity work —
+   or a path to functional significance once ancestry is determined from AA alone?** Two
+   sub-questions, raised together, worth separating: (a) does hashing/comparing at the protein
+   level give any *ancestry-inference* advantage over nucleotide level — plausible caveat before
+   investigating: protein sequences collapse synonymous codon variation (the same reason
+   `cDNA hashes >= AA hashes` always, per the reference-catalog design notes), which likely
+   *reduces* available population-differentiating signal rather than adding any, since much
+   neutral/near-neutral variation used for ancestry work sits exactly in the synonymous sites
+   protein-level hashing throws away — but not yet checked empirically; (b) separately, if
+   ancestry/population membership were ever determined using AA-only data, could that same
+   AA-level catalog then be reused to map toward *functional* consequence (missense/nonsense
+   calls, connecting to item 7b's ClinVar/constraint-score direction) more directly than a
+   nucleotide-level catalog would, since protein change is closer to functional consequence than
+   the underlying codon is. Not investigated.
+9. **Speed advantage of hashing protein sequences instead of nucleotide — for both the reference
+   catalog *and* per-individual batch processing, not just the reference.** Two separate
+   measurements worth taking, not yet done: (a) reference-catalog build — already have a data
+   point suggesting the win is small: proteins are ~3x shorter than CDS (no UTRs, 3nt→1aa), but
+   the genome-wide reference build (13.2s total, see above) is dominated by GTF parsing (5.6s)
+   and FASTA loading, not by the hashing step itself (the whole salted pass over the full genome
+   was only 0.5s) — so a 3x-shorter sequence to hash likely doesn't move the total much; (b)
+   per-individual batch processing — genuinely not measured yet, and less obviously small: the
+   now-dominant per-individual cost is the ~3.1s reference-catalog rebuild (see the "not yet done"
+   note on batch orchestration above), not sequence-level hashing, so switching to AA wouldn't
+   address today's actual bottleneck at that layer either. Worth measuring directly rather than
+   assuming either way before deciding whether this is worth pursuing.
 
 ### Key literature
 - Ondov et al. 2016, *Mash* (Genome Biology). Brown & Irber 2016, *sourmash* (JOSS).
@@ -834,6 +953,11 @@ above are still estimates until a real instance runs this); the reference-catalo
 (currently ~3.1s, now the dominant cost per individual since the real bottleneck is fixed) is
 redundantly rebuilt on every invocation — a batch orchestrator should build it once and reuse it
 across all individuals rather than have each process rebuild it independently.
+
+> ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
+> `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a
+> local-exploration salt only. Generate a fresh salt for the actual population-scale AWS batch
+> run — don't reuse the exploration one for real output.
 ~~1. Validate the MD5/sha512t24u hashing pipeline against a known-good external reference~~ —
 **done 2026-09-01, chr22, full match.** See
 [External validation against Ensembl](#external-validation-against-ensembl-2026-09-01) below for
@@ -842,16 +966,15 @@ here's what to do instead, and it's now proven out on chr22).
 2. Mash/sourmash MinHash distance demo against a 1000 Genomes chr22 panel.
 3. 1000G+HGDP chr22 PCA/ADMIXTURE + coding-vs-genome-wide resolution-collapse demo (see
    [Track 2](#track-2--distance--population-ancestry--active-current-focus-design-only-so-far)).
-4. **Build the IUPAC-collapsed representation on the data already downloaded** (not just resolve
-   the design question — actually do it): one IUPAC-ambiguity sequence per CDS per person
-   (phase-free, single hash) rather than enumerating all `2^n` allele combinations (intractable
-   past a handful of het sites, and the extra combinations add no ancestry signal). Data already
-   local for this: GIAB HG002/HG003/HG004 (`data/giab/`) and the NA19240 impostor-test sample
-   (`data/giab/impostor_test/`, see the false-positive finding above) — no new downloads needed
-   to prototype this. Genotype-set hash (unordered allele pair per site) is the fallback if exact
-   genotypes are needed instead of the IUPAC collapse. See also the salt-on-IUPAC-hashes
-   evaluation under [Hash schemes](#hash-schemes-refget-compatible--decided) — separate decision,
-   not yet adopted.
+~~4. Build the IUPAC-collapsed representation on the data already downloaded.~~ — **done and
+   verified 2026-09-02.** `scripts/batch_haplotype_hash.py --mode iupac` (now the default); see
+   the DECIDED writeup above for the reasoning and the two independent verification methods used.
+   631/1341 chr22 transcripts get a usable hash with zero phase-related exclusions, run against
+   real HG002 data already local (`data/giab/`) — no new downloads needed, as anticipated.
+   Genotype-set hash (unordered allele pair per site) remains the documented fallback if exact
+   genotypes are ever needed instead of the IUPAC collapse, not currently pursued. See also the
+   salt-on-IUPAC-hashes evaluation under [Hash schemes](#hash-schemes-refget-compatible--decided)
+   — separate decision, not yet adopted.
 5. **Download strategy for scaling past chr22 to all chromosomes** — the current remote
    `bcftools view -r/-R -s <url>` approach doesn't scale well. Concretely hit this limit during
    the impostor test above: fetching one sample's full chr22 from the 2,504-sample 1000G

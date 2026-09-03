@@ -62,6 +62,57 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
   credentials are connected to this environment, `aws configure` hasn't been run, and nothing has
   been requested/authorized to spin up billable resources — that stays a separate, explicitly
   confirmed step whenever it actually happens.
+- **IUPAC-collapsed genotype representation decided (over paternal/maternal-separated haplotypes)
+  for Track 2, and implemented the same day.** Reasoning: most population ancestry panels
+  (1000 Genomes, HGDP, gnomAD) have no parent samples to derive paternal/maternal from in the
+  first place; ancestry methods (PCA/ADMIXTURE/F_ST) never use phase; genotype is universal while
+  phase isn't (75/1,341 chr22 transcripts are lost to `phase_incomplete` in the phased approach,
+  recoverable with IUPAC collapse); and two arbitrarily-labeled haplotype hashes create a
+  label-swap comparison problem across individuals that a single IUPAC value doesn't have. Full
+  reasoning, including the honest counter-case for population-phased haplotypes in
+  haplotype-sharing methods, recorded in `HANDOFF.md`.
+  - Implemented in `scripts/batch_haplotype_hash.py` as `--mode iupac` (new default); the
+    original phased behavior stays available as `--mode haplotypes` for Track 1 compatibility.
+  - **Verified two independent ways, not just run once**: `--mode haplotypes` re-checked against
+    the existing verified SQLite catalog after the refactor (still 1,110/1,110 exact matches,
+    confirming no regression); the IUPAC output cross-validated by reconstructing the expected
+    sequence directly from the two already-published-correct haplotype hashes
+    (`ENST00000319363.11`) via a completely independent code path — both derivations produced the
+    identical MD5. On chr22: 631 transcripts get a usable IUPAC hash with zero phase-related
+    exclusions, vs. 556 in haplotype mode (which still loses 75 to `phase_incomplete`).
+- **Exploratory salted IUPAC run saved, deliberately kept separate from the catalog.**
+  `data/derived/chr22/HG002_chr22_iupac.tsv.gz` (631 rows, real `salted_hash_md5` values using a
+  local-exploration-only salt) and `data/derived/chr22/SALT_DO_NOT_COMMIT.txt` — both confirmed
+  gitignored (`data/derived/` is unconditional) before writing, not assumed after. No merge into
+  `hash_catalog.db` was done or attempted; the schema doesn't even support it yet (`seq_type`
+  `CHECK` constraint has no IUPAC value, no `salted_hash` column) — that stays future work.
+- **`het_count` column verified against the actual sequence**, not just the code: reconstructed
+  `ENST00000319363.11`'s real hashed sequence and counted literal IUPAC letters by position —
+  exactly 5, matching the reported `het_count=5`. Confirmed it counts heterozygous positions
+  specifically (homozygous-alt sites are in the underlying variant set but don't increment it).
+- **Row ordering confirmed**: genomic position along the chromosome (inherited from GENCODE's
+  own pre-sorted GTF, never re-sorted anywhere in this code), not transcript ID — verified against
+  real coordinates, not inferred from appearance.
+- **Clarified and documented: zygosity (hom/het) needs no parental data, unlike phasing.**
+  Recorded the distinction plainly in `HANDOFF.md` since it's easy to conflate given how much of
+  this project is about phasing specifically — hom/het is ordinary single-individual genotype
+  calling (already the `GT` field in every VCF here), phasing is the separate, harder problem.
+  Also recorded why homozygous-alt sites carry distinct ancestry signal (genotype dosage weighting
+  in PCA/ADMIXTURE, runs-of-homozygosity as a founder-effect signal directly relevant to the
+  Ashkenazi GIAB trio's own population, and a representation-specific note that hom-alt/hom-ref
+  positions stay fully specific in the hashed sequence while het positions fold into a coarser
+  IUPAC code).
+- **Two new parked research questions added** (continuing the 2026-09-01 list): whether protein
+  (AA) sequences offer any ancestry-inference advantage over nucleotide/CDS level, or a path
+  toward functional-significance mapping once ancestry is AA-derived; and whether hashing AA
+  instead of nucleotide sequences gives any real speed advantage, for both the reference catalog
+  and per-individual batch processing — with a preliminary caveat noted for each (protein hashing
+  collapses synonymous-site variation that ancestry work relies on; today's actual bottlenecks at
+  both layers, GTF parsing and reference-catalog rebuilds, aren't sequence-hashing cost in the
+  first place) but neither actually measured yet.
+- **Reminder recorded** in `HANDOFF.md`'s AWS TODO item: the exploration salt
+  (`TodayI$Miercole$`) must not be reused for the real population-scale AWS run — generate a
+  fresh one when that happens.
 
 ## 2026-09-01 — Empirical false-positive test for Track 1; salt-hashing evaluated; TODO expanded
 

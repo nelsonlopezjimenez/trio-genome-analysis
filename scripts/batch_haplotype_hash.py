@@ -16,6 +16,20 @@ individual's VCF against the reference catalog for ONE chromosome and writes a
 self-contained TSV.gz of results -- safe to run many of these concurrently without any
 shared-database write contention. Merge the outputs afterward.
 
+TWO MODES:
+  --mode iupac (default): one phase-free hash per person per CDS. Heterozygous
+    biallelic SNV positions collapse to the IUPAC ambiguity code (R/Y/S/W/K/M);
+    homozygous positions keep the actual base. DECIDED 2026-09-02 as the right
+    representation for Track 2 (ancestry) -- see HANDOFF.md's IUPAC-collapse decision
+    for the full reasoning (short version: ancestry doesn't use phase at all, most
+    population panels have no parent samples to derive paternal/maternal from in the
+    first place, and this needs no phase resolution -- unlike --mode haplotypes,
+    nothing here is ever excluded as phase_incomplete).
+  --mode haplotypes: the original Track 1 behavior (two separately-phased hap0/hap1
+    hashes per CDS, requires a phased VCF and excludes phase-incomplete sites). Kept
+    for Track 1 compatibility and for the correctness verification this script's
+    optimization was checked against -- not the recommended mode for new work.
+
 SALT HANDLING: no salt is hardcoded here, deliberately -- see HANDOFF.md's salt
 evaluation section (2026-09-01/02) for why a salt committed to a public script is not
 a secret at all. Pass one via --salt or the HASH_SALT environment variable; omitting
@@ -27,6 +41,7 @@ Usage:
         --vcf data/giab/HG002_chr22_phased.vcf.gz \\
         --sample-id HG002 \\
         --out /tmp/HG002_chr22_hashes.tsv.gz \\
+        [--mode iupac|haplotypes] \\
         [--salt "..." | env HASH_SALT=...]
 """
 import argparse
@@ -140,7 +155,42 @@ def build_haplotypes(cds_seq, offsets):
     return "".join(hap0), "".join(hap1), "ok"
 
 
-def process_individual(chrom, vcf_path, sample_id, salt, out_path):
+# Standard IUPAC ambiguity codes for biallelic heterozygous nucleotide pairs. Only the
+# 2-base codes are needed -- build_transcript_variant_map_indexed already guarantees
+# every offset here is a biallelic single-nucleotide substitution (multiallelic sites
+# and indels are filtered upstream, flagged has_indel).
+IUPAC_HET = {
+    frozenset("AG"): "R", frozenset("CT"): "Y", frozenset("GC"): "S",
+    frozenset("AT"): "W", frozenset("GT"): "K", frozenset("AC"): "M",
+}
+
+
+def iupac_code(base0, base1):
+    if base0 == base1:
+        return base0
+    code = IUPAC_HET.get(frozenset((base0, base1)))
+    if code is None:
+        raise ValueError(f"Unexpected base pair for IUPAC collapse: {base0!r}, {base1!r}")
+    return code
+
+
+def build_iupac_collapsed(cds_seq, offsets):
+    """One phase-free sequence per person per CDS -- see HANDOFF.md's 2026-09-02 IUPAC-collapse
+    decision. No phasing needed at all: unlike build_haplotypes, there is no phase_incomplete
+    exclusion here, since a heterozygous site's IUPAC code is well-defined regardless of which
+    physical chromosome copy each allele sits on. Returns (sequence, het_count)."""
+    seq = list(cds_seq)
+    het_count = 0
+    for p, v in offsets.items():
+        alleles = (v["ref"], v["alt"])
+        b0, b1 = alleles[v["gt"][0]], alleles[v["gt"][1]]
+        if b0 != b1:
+            het_count += 1
+        seq[p] = iupac_code(b0, b1)
+    return "".join(seq), het_count
+
+
+def process_individual(chrom, vcf_path, sample_id, salt, out_path, mode="iupac"):
     t0 = time.perf_counter()
     chrom_transcripts = cds.parse_gtf_chrom(os.path.join(REF, "gencode.v46.basic.annotation.gtf.gz"), chrom)
     tx_seqs, tx_meta = cds.load_transcripts_fasta(os.path.join(REF, "gencode.v46.pc_transcripts.fa.gz"))
@@ -163,27 +213,36 @@ def process_individual(chrom, vcf_path, sample_id, salt, out_path):
             categories["no_variants"] = categories.get("no_variants", 0) + 1
             continue
         cds_seq = entry["cds_seq"]
-        hap0, hap1, status = build_haplotypes(cds_seq, offsets)
-        if status != "ok":
-            categories[status] = categories.get(status, 0) + 1
-            continue
-        for hap_name, hap_seq in (("hap0", hap0), ("hap1", hap1)):
-            md5 = cds.md5_digest(hap_seq)
-            sq = cds.ga4gh_sq_digest(hap_seq)
-            salted_md5 = cds.md5_digest(salt + hap_seq) if salt else ""
-            rows.append((entry["transcript_id"], entry["gene_id"], sample_id, hap_name,
-                         md5, sq, salted_md5, len(hap_seq)))
+
+        if mode == "iupac":
+            seq, het_count = build_iupac_collapsed(cds_seq, offsets)
+            md5 = cds.md5_digest(seq)
+            sq = cds.ga4gh_sq_digest(seq)
+            salted_md5 = cds.md5_digest(salt + seq) if salt else ""
+            rows.append((entry["transcript_id"], entry["gene_id"], sample_id, "iupac",
+                         md5, sq, salted_md5, len(seq), het_count))
+        else:  # mode == "haplotypes"
+            hap0, hap1, status = build_haplotypes(cds_seq, offsets)
+            if status != "ok":
+                categories[status] = categories.get(status, 0) + 1
+                continue
+            for hap_name, hap_seq in (("hap0", hap0), ("hap1", hap1)):
+                md5 = cds.md5_digest(hap_seq)
+                sq = cds.ga4gh_sq_digest(hap_seq)
+                salted_md5 = cds.md5_digest(salt + hap_seq) if salt else ""
+                rows.append((entry["transcript_id"], entry["gene_id"], sample_id, hap_name,
+                             md5, sq, salted_md5, len(hap_seq), ""))
     t3 = time.perf_counter()
 
     with gzip.open(out_path, "wt") as fh:
-        fh.write("transcript_id\tgene_id\tsample_id\thaplotype\thash_md5\thash_sq\tsalted_hash_md5\tlength\n")
+        fh.write("transcript_id\tgene_id\tsample_id\thaplotype\thash_md5\thash_sq\tsalted_hash_md5\tlength\thet_count\n")
         for row in rows:
             fh.write("\t".join(str(x) for x in row) + "\n")
     t4 = time.perf_counter()
 
-    print(f"catalog build: {t1-t0:.2f}s | vcf load+index: {t2-t1:.2f}s | "
-          f"haplotype extraction+hashing: {t3-t2:.2f}s | write: {t4-t3:.2f}s | total: {t4-t0:.2f}s")
-    print(f"{len(rows)} haplotype hashes written to {out_path}")
+    print(f"mode: {mode} | catalog build: {t1-t0:.2f}s | vcf load+index: {t2-t1:.2f}s | "
+          f"extraction+hashing: {t3-t2:.2f}s | write: {t4-t3:.2f}s | total: {t4-t0:.2f}s")
+    print(f"{len(rows)} hashes written to {out_path}")
     print(f"categories skipped: {categories}")
     return rows
 
@@ -194,11 +253,14 @@ def main():
     ap.add_argument("--vcf", required=True, help="path to the individual's chromosome VCF (bgzipped)")
     ap.add_argument("--sample-id", required=True, help="e.g. HG002, NA19240")
     ap.add_argument("--out", required=True, help="output path, .tsv.gz")
+    ap.add_argument("--mode", choices=("iupac", "haplotypes"), default="iupac",
+                     help="iupac (default, recommended for Track 2/ancestry, see HANDOFF.md) "
+                          "or haplotypes (Track 1-style phased hap0/hap1, requires a phased VCF)")
     ap.add_argument("--salt", default=os.environ.get("HASH_SALT", ""),
                      help="salt for salted_hash_md5 column; also read from HASH_SALT env var; "
                           "omit both for unsalted-only output (salted_hash_md5 left empty)")
     args = ap.parse_args()
-    process_individual(args.chrom, args.vcf, args.sample_id, args.salt, args.out)
+    process_individual(args.chrom, args.vcf, args.sample_id, args.salt, args.out, args.mode)
 
 
 if __name__ == "__main__":
