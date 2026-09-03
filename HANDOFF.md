@@ -669,7 +669,65 @@ Checked directly against the actual hosts rather than assumed:
 - The CDS-region BED-restriction technique already used for the impostor test (0.7 Mb vs. chr22's
   40.3 Mb, ~57x smaller) remains useful regardless of which host serves the data.
 
-### Cost estimate for an AWS batch run — order of magnitude, not exact
+### Cost estimate for an AWS batch run — CORRECTED 2026-09-03, fetch time dominates
+
+**The estimate below this line is superseded — it only ever counted compute time.** Every
+compute benchmark behind it (11.76s, ~9.4 min/individual) ran against
+`data/giab/HG002_chr22_phased.vcf.gz`, a file already sitting on local disk. Real 1000 Genomes
+individuals aren't local — they have to be fetched from `s3://1000genomes` first via the
+BED-restricted `bcftools` technique, and that fetch is now **measured**, not assumed: **~8
+minutes per individual for chr22 alone** (`scripts/aws/test_s3_fetch.sh`, 2026-09-03, real
+colocated `us-east-1` run). Compute is 0.02–0.04s per individual by comparison — fetch is
+roughly **10,000–20,000× the cost of compute**, and the old estimate never included it.
+
+**Genome-wide fetch, extrapolated from two independent real measurements that converge closely**
+(not one shaky guess): scaling chr22's 8 minutes by CDS-region count (201,612 ÷ 4,186 = 48.16×)
+and by actual base-pair coverage computed directly from the generated BED files (34,756,320 ÷
+712,750 bp = 48.76×) — both land within 1% of each other, giving real confidence in **~48×** as
+the scaling factor. That's **~6.5 hours of fetch time per individual, genome-wide**.
+
+**Compute + catalog-loading, genome-wide (same ×48 scaling from real chr22 numbers, this time
+also measured for the loader, not just extraction/hashing)**: ~10.6s/individual (vcf load+index
++ extraction/hashing + `load_individual_hashes.py`, catalog build amortized as a one-time ~13.2s
+cost shared across all individuals) — **confirms this part is still a rounding error**: ~7.4
+hours sequential across all 2,504 individuals, or **under 7 minutes** parallelized on a 64-vCPU
+instance. Directly answers "how many days for calculations and storing in the catalog": none —
+minutes, not days, even without parallelization being especially efficient.
+
+**Total time and cost — range, not a point estimate, since parallel fetch efficiency on a
+64-vCPU instance hasn't actually been measured yet** (only one fetch has ever been run at a
+time):
+
+| Scenario | Effective parallel fetches | Wall-clock | Cost (~$2.7/hr on-demand `c6i.16xlarge`†) |
+|---|---|---|---|
+| Sequential, chr22-only (reference point, not the real target) | 1 | 13.9 days | — |
+| Sequential, genome-wide (no parallelization at all) | 1 | 674 days (~1.85 years) | — |
+| **Minimum** (optimistic: near-linear scaling — plausible, since each fetch is latency/CPU-bound on many small HTTP range requests, not bandwidth-bound: only 3.2MB transferred over 8 minutes for chr22, far below the ~62 MB/s raw throughput measured separately) | 64 | **~10.5 days** | **~$680** |
+| **Maximum** (conservative: real-world contention — EC2 packets-per-second limits, S3-side overhead, imperfect scheduling — cuts effective parallelism to 1/4) | 16 | **~42 days** | **~$2,730** |
+
+† Back-calculated from the old estimate's implied rate (~$15–20 ÷ 6.5 hrs), not fetched live from
+AWS's pricing API — treat as order-of-magnitude, verify before committing real spend.
+
+**This is a dramatically different picture from the old "$6–20, hours not days" conclusion** —
+that conclusion was true, just only about the part that was never the bottleneck. Parallelization
+was always described as "the workload is embarrassingly parallel," but it was previously optional
+for convenience; it's now the difference between ~1.85 years and ~10–42 days, i.e. no longer
+optional for feasibility at all.
+
+**A real, unevaluated optimization worth investigating before committing to Phase 2 as currently
+scoped**: right now, each of 2,504 individuals independently re-fetches overlapping CDS regions
+from the *same* giant joint-called VCF, 2,504 separate times — massively redundant remote work.
+An alternative: download each chromosome's CDS-restricted slice **once** (still all 2,504
+samples, just region-restricted — a bulk, one-time remote fetch), then extract each individual
+locally via `bcftools view -s` against that one local file — turning an O(2,504) *remote* fetch
+cost into one remote fetch plus O(2,504) *local* slices, which should be far cheaper per
+individual (no network round-trip or S3 per-request overhead, governed by local disk I/O
+instead). Not yet measured or built — worth a small real test before assuming either the
+above range or this alternative, rather than guessing which is actually faster.
+
+---
+
+**Original (compute-only) estimate below, kept for the record — superseded by the above:**
 
 Using the real numbers above, spot pricing, and an instance colocated with `s3://1000genomes`:
 - **Unoptimized code**: ~392 core-hours total (2,504 × 9.4 min). One `c6i.16xlarge`-class instance
@@ -682,9 +740,9 @@ Using the real numbers above, spot pricing, and an instance colocated with `s3:/
   fetched live from AWS's pricing API. The order of magnitude (single-digit-to-low-double-digit
   dollars, hours not days) is robust to normal price drift; exact current pricing should be
   checked before actually committing spend.
-- **Headline conclusion**: at this scale, cloud compute cost is a rounding error next to
-  engineering time. The indexing fix and parallelization are worth doing for their own sake
-  (correctness of the estimate, reusability), not because the AWS bill is a real constraint.
+- **Headline conclusion (SUPERSEDED — see above)**: ~~at this scale, cloud compute cost is a
+  rounding error next to engineering time.~~ True for compute, not for fetch — fetch dominates
+  total cost/time by 3–4 orders of magnitude.
 
 ---
 

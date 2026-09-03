@@ -9,6 +9,37 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Cost/timing estimate corrected: fetch, not compute, dominates
+
+- **Caught and fixed a real error in the standing cost estimate**: the old "$6–20, hours not
+  days" figure in `HANDOFF.md` only ever counted compute time — every benchmark behind it ran
+  against a VCF already on local disk. Real 1000 Genomes individuals require an S3 fetch first,
+  and that fetch (measured earlier today at ~8 min/individual for chr22) turns out to be
+  ~10,000–20,000x the cost of compute per individual, never counted before.
+- **Genome-wide fetch extrapolated using two independent real measurements that converge
+  closely**: CDS-region count (201,612 ÷ 4,186 = 48.16x) and actual base-pair coverage computed
+  directly from the generated BED files (34,756,320 ÷ 712,750 bp = 48.76x) — both land within 1%
+  of each other, giving real confidence in ~48x rather than an arbitrary guess. Genome-wide fetch
+  ≈ 6.5 hours/individual; sequential across all 2,504 individuals ≈ 674 days (~1.85 years).
+- **Compute + catalog-loading directly measured and confirmed negligible by comparison**: real
+  loader timing added (0.028s for 631 rows) alongside the existing compute numbers, both scaled
+  x48 — ~10.6s/individual genome-wide, ~7.4 hours sequential across all 2,504, under 7 minutes
+  parallelized. Answers a direct question: no, calculating and storing in the catalog is not a
+  multi-day cost at any point — fetch is the entire bottleneck.
+- **New range estimate, not a point estimate**, since parallel fetch efficiency on a 64-vCPU
+  instance has never actually been measured (only one fetch has ever run at a time): **~10.5–42
+  days wall-clock, ~$680–$2,730**, depending on how well concurrent fetches actually scale in
+  practice (optimistic near-linear scaling vs. conservative real-world contention/PPS-limit
+  assumptions).
+- **Flagged, not yet built**: an unevaluated alternative architecture — download each
+  chromosome's CDS-restricted slice once (still all 2,504 samples, one bulk remote fetch), then
+  extract each individual locally rather than 2,504 separate redundant remote fetches of
+  overlapping regions from the same file. Could avoid most of the fetch-cost blowup above if it
+  works as well as it sounds; not measured or built yet.
+- `HANDOFF.md`, `README.md`, and `PROJECT_MAP.md` all updated with the corrected numbers; the old
+  compute-only estimate kept in `HANDOFF.md`, marked superseded, for the historical record rather
+  than deleted.
+
 ## 2026-09-03 — Phase 2 salt transfer wired
 
 - **`scripts/aws/phase2_deploy.sh`** (new): deploy-side prep for Phase 2 on an already-running

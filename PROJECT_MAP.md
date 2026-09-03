@@ -83,10 +83,21 @@ data already in this repo, even though both are nominally "Ensembl."
   │  HANDOFF.md's Finding section); external validation against Ensembl (1341/1341 exact match,
   │  chr22, both protein and CDS layers) — the two open "Not yet done" validation TODOs, closed
   │
-  2026-09-02  (today)
-  ▼  Genome-wide scale measured for real: whole-genome reference catalog builds in 13s, but
-     per-individual processing has a real bottleneck (~11.76s/individual on chr22 alone, a linear
-     variant scan) — now being fixed and refactored for parallel AWS batch processing
+  2026-09-02
+  │  Genome-wide scale measured for real: whole-genome reference catalog builds in 13s, per-
+  │  individual linear-scan bottleneck diagnosed and fixed (~390x speedup via a sorted-position
+  │  index). IUPAC-collapsed genotype representation DECIDED for Track 2. AWS prep begins.
+  │
+  2026-09-03  (today)
+  ▼  Phase 1 AWS smoke test passed on real infrastructure; genome-wide CDS-region BED files
+     generated (201,612 regions, all 24 chromosomes); individual_hash_catalog.db schema built
+     and verified; bcftools solved via micromamba, baked into a custom "golden" AMI.
+     ★ Cost/timing estimate CORRECTED ★ — the old "$6–20, hours not days" figure only ever
+     counted compute time. Real per-individual S3 fetch now measured (~8 min, chr22) and
+     extrapolated genome-wide (~48x, two independent methods converge): fetch dominates by
+     3–4 orders of magnitude over compute. Realistic range for the full batch, parallelized on
+     one 64-vCPU instance: ~10.5–42 days, ~$680–$2,730 — see HANDOFF.md's corrected cost
+     section. Phase 2 (the actual batch run) still not started, needs explicit go-ahead.
 ```
 
 ---
