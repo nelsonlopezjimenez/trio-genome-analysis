@@ -93,3 +93,17 @@ extrapolations from real chr22 measurements, not yet confirmed by an actual geno
 per-individual run); this needs its own explicit confirmation before running, same as Phase 1
 did — a bigger instance running longer across all chromosomes is a bigger, less reversible cost
 commitment.
+
+**What's built so far, 2026-09-03**: `scripts/aws/phase2_deploy.sh <public-ip> <key-pair-name>
+<salt-file-path>` handles deploy-side prep once an instance is running (ideally launched with
+`--golden`, see above) — transfers the pipeline scripts, the full genome-wide GENCODE reference,
+all 24 chromosomes' CDS-region BED files, and the salt file itself (securely: the salt's
+*contents* never appear in this script, in `ps aux`, or in shell history — only the file path
+does; see `HANDOFF.md`'s "Salt handling hardened" section). Create the salt file yourself first,
+directly in your own terminal (`nano`, or a `read -s` one-liner — never `echo 'value' > file`,
+which *would* land the value in shell history). **Not yet built**: the actual batch loop —
+enumerating all 2,504 individuals, fetching each one's per-chromosome CDS slice from
+`s3://1000genomes`, running `batch_haplotype_hash.py`, and loading results via
+`scripts/load_individual_hashes.py` — across all individuals and chromosomes, parallelized. That
+orchestration still needs its own design (sample enumeration source, parallelization strategy)
+and, once built, its own explicit go-ahead before running for real.

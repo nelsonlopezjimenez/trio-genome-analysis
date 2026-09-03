@@ -1078,6 +1078,19 @@ an optional `--golden` flag to use this AMI instead of resolving the latest stoc
 immediately with no install step, terminated. Worth using for Phase 2 or repeated dev/test
 cycles; not needed for a plain mechanics-only smoke test where the AMI doesn't matter.
 
+**Phase 2 salt transfer wired, 2026-09-03**: the Mac mini holds the salt file, but Phase 2 runs
+on an AWS instance — `scripts/aws/phase2_deploy.sh <public-ip> <key-pair-name> <salt-file-path>`
+`scp`s it over (SSH-encrypted in transit, `chmod 600` on arrival), the same pattern
+`deploy_and_test.sh` already uses for other files. The script's argument is always a *path*, so
+even when driving this from here, the salt's contents never need to appear in a tool call, `ps
+aux`, or shell history — only the file path does. Verified the missing-file guard fails fast
+before attempting any SSH connection. Also transfers the pipeline scripts, full genome-wide
+GENCODE reference, and all 24 chromosomes' CDS-region BED files — everything an instance needs
+before the actual batch loop can run. **Not yet built**: the batch loop itself (per-individual
+S3 fetch + hash + load across all 2,504 individuals × 24 chromosomes, parallelized) — separate,
+undesigned work (needs a sample-enumeration source and a parallelization strategy decided) with
+its own go-ahead required before Phase 2 runs for real.
+
 > ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
 > `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a
 > local-exploration salt only. Generate a fresh salt for the actual population-scale AWS batch

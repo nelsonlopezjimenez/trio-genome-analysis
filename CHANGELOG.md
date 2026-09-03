@@ -9,6 +9,18 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Phase 2 salt transfer wired
+
+- **`scripts/aws/phase2_deploy.sh`** (new): deploy-side prep for Phase 2 on an already-running
+  instance — transfers the pipeline scripts, full genome-wide GENCODE reference, all 24
+  chromosomes' CDS-region BED files, and the salt file. The salt file is `scp`'d over (encrypted
+  in transit) and `chmod 600`'d on arrival, matching `deploy_and_test.sh`'s existing file-transfer
+  pattern; the script's argument is a path, so the salt's contents never appear in a tool call,
+  `ps aux`, or shell history. Verified the missing-file guard fails fast before any SSH attempt.
+- Explicitly scoped as deploy-side prep only — the actual batch loop (per-individual S3 fetch +
+  hash + load across all individuals/chromosomes, parallelized) is separate, undesigned work,
+  flagged clearly in the script's own output and in `scripts/aws/README.md`.
+
 ## 2026-09-03 — Catalog schema built; salt-file handling added; golden AMI baked
 
 - **`batch_haplotype_hash.py`**: added `salted_hash_sq` (previously only MD5 got salted, not the
