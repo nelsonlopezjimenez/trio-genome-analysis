@@ -9,6 +9,37 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Phase 2 scope clarified; genome-wide CDS BED files generated; catalog schema decided
+
+- **Real inconsistency caught and fixed**: `scripts/aws/README.md`'s Phase 2 plan literally said
+  "chr22 CDS-region slice," while `HANDOFF.md`'s cost/timing estimates were genome-wide
+  extrapolations — the two didn't describe the same amount of work. Clarified with the user:
+  Phase 2 is **scaling the existing coding-region hash pipeline to all 2,504 individuals AND all
+  chromosomes**, still coding-only by design — explicitly *not* the separate whole-genome
+  ancestry pipeline (Mash/sourmash, PCA/ADMIXTURE) that Track 2's own design section says the
+  real ancestry signal actually needs. `scripts/aws/README.md` updated to state this precisely.
+- **`scripts/generate_cds_bed.py`**: generates one merged, sorted CDS-region BED file per
+  chromosome (`data/reference/cds_regions/{chrom}_cds_regions.bed`), extending the one-off chr22
+  BED file used in the impostor test to all 24 chromosomes (chr1–22, X, Y; chrM excluded — not
+  present in 1000 Genomes' per-chromosome joint-VCF releases). **201,612 merged regions total**,
+  restricted to the same *validated* transcript set the hashing pipeline actually processes, not
+  just any CDS-bearing transcript in the raw GTF (raw GTF parsing alone gives 4,300 chr22 regions
+  vs. the correct 4,186 — confirmed by a first, wrong attempt, then fixed by reusing
+  `gencode_cds_extract.extract_chrom`'s validation). **Verified, not assumed**: regenerated chr22
+  and diffed byte-for-byte against the original, already-used
+  `data/giab/impostor_test/chr22_cds_regions.bed` — exact match.
+- Reaffirmed BED-restriction is still necessary even with fast colocated S3 access (today's
+  measured ~62 MB/s): the original bottleneck was `bcftools` parsing every one of 2,504 samples'
+  columns per site before discarding unwanted ones — a CPU cost independent of network speed.
+- **`individual_hash_catalog.db` schema decided**: one flat table (not split into
+  unsalted/salted tables), after confirming the real usage model is one salt at a time, not
+  multiple coexisting salt-versions per individual. `UNIQUE(transcript_id, sample_id,
+  representation)` constraint pairs with `INSERT OR REPLACE` as a re-run guard — safe to rerun
+  the batch loader after an interrupted run or a deliberate re-salt without manual cleanup. Two
+  small fixes flagged for `batch_haplotype_hash.py` alongside this: rename `haplotype` column to
+  `representation` (it's not always a haplotype post-IUPAC-decision), and add `salted_hash_sq`
+  (currently only MD5 gets salted, not the stronger SQ hash) — not yet implemented.
+
 ## 2026-09-03 — S3 fetch tested directly on an instance
 
 - **`scripts/aws/test_s3_fetch.sh`**: launched a second `c6i.xlarge` instance to test the one

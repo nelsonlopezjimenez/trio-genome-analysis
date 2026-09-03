@@ -980,6 +980,51 @@ on the Mac mini during the impostor test), just leaves its on-AWS wall-clock num
 an alternate install path (source build, conda, or `pip install pysam` with build deps) before
 that specific number can be measured — not attempted yet, deliberately kept this test light.
 
+**Phase 2 output catalog schema, DECIDED 2026-09-03**: per-individual output loads into a new
+`individual_hash_catalog.db`, kept separate from the existing `hash_catalog.db` (reference-only,
+unsalted) per earlier instruction — not merged into it. One flat table, not split across
+unsalted/salted tables:
+
+```sql
+CREATE TABLE individual_hashes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    transcript_id   TEXT NOT NULL,
+    gene_id         TEXT NOT NULL,
+    sample_id       TEXT NOT NULL,
+    representation  TEXT NOT NULL,   -- 'iupac' | 'hap0' | 'hap1' (renamed from 'haplotype' --
+                                      -- not always a haplotype anymore, post the IUPAC decision)
+    hash_md5        TEXT NOT NULL,   -- unsalted
+    hash_sq         TEXT NOT NULL,   -- unsalted, GA4GH sha512t24u
+    salted_hash_md5 TEXT,            -- NULL if run unsalted
+    salted_hash_sq  TEXT,            -- new: the current .tsv.gz only salts MD5, not SQ -- add
+                                      -- this column for symmetry with the unsalted pair
+    length          INTEGER NOT NULL,
+    het_count       INTEGER,         -- NULL for haplotypes mode, 0+ for iupac mode
+    salt_label      TEXT,            -- e.g. "phase2-2026-09" -- NEVER the raw salt value itself
+    UNIQUE(transcript_id, sample_id, representation)
+);
+```
+
+Chose flat/wide over splitting unsalted (stable "ground truth") from salted (access-control
+variant) into two separate tables, after confirming the actual usage model: **one salt at a
+time** — a Phase 2 re-run under a fresh salt is meant to replace old salted values, not keep
+multiple salt-versions coexisting per individual. The two-table split (with a `salts` lookup
+table and `salt_id` as part of the key) would only earn its complexity if multiple salt-versions
+ever needed to coexist (e.g. different salts issued to different downstream consumers) — not the
+case here, so kept simple per this project's own "no premature abstraction" norm.
+
+The `UNIQUE(transcript_id, sample_id, representation)` constraint doubles as a re-run guard for
+the loader: **`INSERT OR REPLACE`** is the intended load strategy — safe to rerun the whole batch
+loader as many times as needed (e.g. after an interrupted Phase 2 batch, or a deliberate re-salt)
+without manually clearing tables or worrying about duplicate/stale rows. `INSERT OR IGNORE` would
+instead be the right choice if idempotent *resume* (skip what's already loaded, never overwrite)
+were the goal instead of clean replacement — not chosen here, since re-salting is expected to
+supersede old salted values, not coexist with them. Note this only guards against duplicate
+*identity*, not corrupt data within a row (e.g. a truncated `.tsv.gz` transfer) — worth a basic
+row-count sanity check per file before loading if that's a real risk for the transfer method
+Phase 2 ends up using. Not yet built: the actual schema-creation + TSV-loader script, and adding
+`salted_hash_sq` computation to `batch_haplotype_hash.py` (currently only salts MD5).
+
 > ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
 > `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a
 > local-exploration salt only. Generate a fresh salt for the actual population-scale AWS batch
@@ -1002,22 +1047,32 @@ here's what to do instead, and it's now proven out on chr22).
    genotypes are ever needed instead of the IUPAC collapse, not currently pursued. See also the
    salt-on-IUPAC-hashes evaluation under [Hash schemes](#hash-schemes-refget-compatible--decided)
    — separate decision, not yet adopted.
-5. **Download strategy for scaling past chr22 to all chromosomes** — the current remote
-   `bcftools view -r/-R -s <url>` approach doesn't scale well. Concretely hit this limit during
-   the impostor test above: fetching one sample's full chr22 from the 2,504-sample 1000G
-   high-coverage file took ~40 minutes for 0.57% of the chromosome before being restricted to a
-   BED file of just the needed regions — `bcftools` still has to stream and decompress every
-   sample's INFO/FORMAT fields per line before discarding unwanted columns, so sample-subsetting
-   alone doesn't reduce network transfer, only output size. Options to evaluate before going
-   genome-wide: (a) region-restrict via BED file to only what's needed, as done here — helps but
-   still slow with many small discontiguous regions; (b) a lighter-weight source than the
-   heavily-annotated NYGC high-coverage callset — e.g. 1000G phase 3 (GRCh38 liftover), which has
-   far fewer population-stratified INFO fields per line; (c) sites-only VCFs (gnomAD or similar)
-   if allele frequency is the actual need, not per-sample genotypes — dramatically smaller; (d)
-   download once per chromosome and cache locally rather than repeated narrow remote slices, if
-   many different region/sample queries are expected across a session; (e) cloud object storage
-   (1000G/gnomAD are also on AWS Open Data / GCP public datasets) if paired with compute in the
-   same region — not applicable currently (no cloud compute in use, see Environment section).
+5. **Download strategy for scaling past chr22 to all chromosomes.** The current remote
+   `bcftools view -r/-R -s <url>` approach hits a real limit: fetching one sample's full chr22
+   from the 2,504-sample 1000G high-coverage file took ~40 minutes for 0.57% of the chromosome
+   before being restricted to a BED file of just the needed regions — `bcftools` still has to
+   stream and decompress every sample's INFO/FORMAT fields per line before discarding unwanted
+   columns, so sample-subsetting alone doesn't reduce network transfer, only output size. This
+   holds regardless of network speed: the same-region S3 throughput test below (~62 MB/s) doesn't
+   remove the CPU-bound parsing cost, so region-restriction remains necessary, not just a
+   workaround for a slow home connection.
+   **Region-restriction now extended to all chromosomes, 2026-09-03**:
+   `scripts/generate_cds_bed.py` generates one merged, sorted BED file per chromosome at
+   `data/reference/cds_regions/{chrom}_cds_regions.bed` — 201,612 merged CDS regions across all
+   24 chromosomes (chr1–22, X, Y; chrM excluded, since 1000 Genomes' per-chromosome joint-VCF
+   releases don't include a chrM file in the same format), restricted to the same *validated*
+   transcript set `gencode_cds_extract.py` actually hashes (not just any CDS-bearing transcript
+   in the raw GTF) — confirmed necessary and correct by regenerating chr22 and diffing
+   byte-for-byte against the original, already-used `data/giab/impostor_test/
+   chr22_cds_regions.bed`: exact match, 1,341/1,404 validated transcripts, 4,186 merged regions.
+   Remaining options if this still isn't fast enough at full population scale, not yet needed:
+   (b) a lighter-weight source than the heavily-annotated NYGC high-coverage callset — e.g. 1000G
+   phase 3 (GRCh38 liftover), far fewer population-stratified INFO fields per line; (c)
+   sites-only VCFs (gnomAD or similar) if allele frequency is ever the actual need instead of
+   per-sample genotypes — dramatically smaller, but not applicable to Track 1/2's per-individual
+   hash catalog as currently scoped; (d) download once per chromosome and cache locally rather
+   than repeated narrow remote slices, if many different region/sample queries are expected
+   across a session.
 
 **Shared reference-catalog fixes — both tracks depend on `gencode_cds_extract.py`'s output, do
 these before/alongside Track 2 work rather than only as Track-1 cleanup:**
