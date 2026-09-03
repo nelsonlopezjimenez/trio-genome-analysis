@@ -1040,8 +1040,43 @@ were the goal instead of clean replacement — not chosen here, since re-salting
 supersede old salted values, not coexist with them. Note this only guards against duplicate
 *identity*, not corrupt data within a row (e.g. a truncated `.tsv.gz` transfer) — worth a basic
 row-count sanity check per file before loading if that's a real risk for the transfer method
-Phase 2 ends up using. Not yet built: the actual schema-creation + TSV-loader script, and adding
-`salted_hash_sq` computation to `batch_haplotype_hash.py` (currently only salts MD5).
+Phase 2 ends up using.
+
+**Built and verified, 2026-09-03**: `salted_hash_sq` added to `batch_haplotype_hash.py` (both
+modes), `haplotype` column renamed to `representation` in the `.tsv.gz` output — re-verified
+against the known-good `ENST00000319363.11` value (`hash_md5=3bbd34fa...`, `het_count=5`
+unchanged) after the change, plus a `--mode haplotypes` smoke test (1,112 rows, matching the
+prior count). `scripts/load_individual_hashes.py` implements the schema exactly as designed
+above and creates `data/derived/individual_hash_catalog.db` on first use (kept genome-wide, not
+nested under `chr22/`, since Phase 2 spans all chromosomes). Verified with real data, not just
+inspected: (a) fresh load — 631 rows for one individual; (b) idempotent reload — reloading the
+identical file leaves row count unchanged (631, not 1,262); (c) re-salt correctness — reloading
+under a *different* salt/salt_label leaves the unsalted `hash_md5` identical but updates
+`salted_hash_md5`/`salted_hash_sq`/`salt_label`, with row count still unchanged (`INSERT OR
+REPLACE` doing exactly the intended "old salted values become obsolete" behavior, not
+accumulating duplicates); (d) NULL handling — `het_count` correctly NULL for `--mode haplotypes`
+rows, `salted_hash_md5`/`salted_hash_sq` correctly NULL for unsalted loads; (e) coexistence — the
+same individual's `iupac` and `hap0`/`hap1` rows load into the same table without conflict
+(556+556+631 = 1,743 rows, no collisions), confirming `representation` is doing its job as part
+of the `UNIQUE` key.
+
+**Salt handling hardened**: added `--salt-file <path>` to `batch_haplotype_hash.py`, safer than
+`--salt <value>` for a real salt — the value never appears in `ps aux` or shell history, only the
+file path does. Takes precedence over `--salt`/`HASH_SALT` when given. Recommended pattern for
+the real Phase 2 salt: write it to a file outside the repo (or under `data/derived/`, already
+unconditionally gitignored) directly in your own terminal, then pass `--salt-file` — the value
+never needs to appear in this chat or any log of it.
+
+**Custom "golden" AMI baked, 2026-09-03**: `ami-020985bb7982d427b`
+(`trio-genome-bcftools-20260903`, private to this AWS account, `us-east-1`) — Amazon Linux 2023
+with `micromamba` + `bcftools 1.24` (bioconda) pre-installed, removing the ~1 minute install step
+from every future instance launch. Built by launching a base instance, installing via the same
+micromamba path proven in the S3-fetch test, running `aws ec2 create-image`, and terminating the
+source instance once the AMI reached `available`. `scripts/aws/launch_smoke_test.sh` now accepts
+an optional `--golden` flag to use this AMI instead of resolving the latest stock AL2023 image —
+**verified working**: launched an instance with `--golden`, confirmed `bcftools 1.24` runs
+immediately with no install step, terminated. Worth using for Phase 2 or repeated dev/test
+cycles; not needed for a plain mechanics-only smoke test where the AMI doesn't matter.
 
 > ⚠️ **REMINDER before the real AWS run**: `TodayI$Miercole$` (used in
 > `data/derived/chr22/HG002_chr22_iupac.tsv.gz`/`SALT_DO_NOT_COMMIT.txt`, 2026-09-02) was a

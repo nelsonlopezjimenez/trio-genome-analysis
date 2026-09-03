@@ -54,9 +54,15 @@ confirm the *hosting* side of the cost/speed estimate too, not just the compute 
 - Region: `us-east-1` (colocated with the data, verified)
 - Instance type: `c6i.xlarge` (4 vCPU) — deliberately small for a first test, not the
   `c6i.16xlarge` (64 vCPU) the Phase 2 cost estimate is based on
-- Pricing: spot (cheaper; a smoke test can tolerate interruption — nothing here has state to lose)
-- AMI: latest Amazon Linux 2023 (has Python 3 preinstalled; resolved dynamically by
-  `launch_smoke_test.sh`, not a hardcoded/stale AMI ID)
+- Pricing: on-demand (spot capacity for `c6i.xlarge` was unavailable in `us-east-1` at
+  smoke-test time, 2026-09-03 — `launch_smoke_test.sh` defaults to on-demand now; a few cents
+  more per run, worth it for reliability at this scale)
+- AMI: latest Amazon Linux 2023 by default (has Python 3 preinstalled; resolved dynamically, not
+  a hardcoded/stale AMI ID) — or pass `--golden` to use the pre-baked
+  `trio-genome-bcftools-20260903` AMI (`ami-020985bb7982d427b`, private to this account,
+  `bcftools 1.24` via micromamba already installed, built and verified 2026-09-03). Use `--golden`
+  whenever `bcftools` is actually needed (Phase 2, or repeated dev/test cycles) to skip the ~1
+  minute install step; the plain AL2023 AMI is fine for a mechanics-only smoke test.
 - Security group: SSH (port 22) restricted to your current public IP only, not `0.0.0.0/0`
 - **No salt used in this smoke test** — it's testing the pipeline mechanics, not producing real
   output. Recall from `HANDOFF.md`: `TodayI$Miercole$` was local-exploration only and must not

@@ -9,6 +9,27 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-03 — Catalog schema built; salt-file handling added; golden AMI baked
+
+- **`batch_haplotype_hash.py`**: added `salted_hash_sq` (previously only MD5 got salted, not the
+  stronger SQ hash), renamed `haplotype` column to `representation`. Re-verified against the
+  known-good `ENST00000319363.11` value after the change (unchanged), plus a `--mode haplotypes`
+  smoke test (1,112 rows, consistent with the prior count).
+- **`scripts/load_individual_hashes.py`** (new): creates and loads `individual_hash_catalog.db`
+  per the schema decided earlier this session (flat table, `UNIQUE(transcript_id, sample_id,
+  representation)`, `INSERT OR REPLACE`). Verified with real data: fresh load, idempotent reload
+  (no duplicate rows), re-salt correctness (unsalted hash stays identical, salted hash + label
+  update cleanly, no duplicates), NULL handling for both `het_count` and the salted columns, and
+  `iupac`/`hap0`/`hap1` rows for the same individual coexisting without conflict.
+- **`--salt-file` added** to `batch_haplotype_hash.py`: reads the salt from a file instead of a
+  command-line value — avoids the salt appearing in `ps aux` or shell history, and means it never
+  needs to be typed into this chat either. Takes precedence over `--salt`/`HASH_SALT`.
+- **Custom AMI baked**: `ami-020985bb7982d427b` (`trio-genome-bcftools-20260903`) — Amazon Linux
+  2023 with `micromamba`/`bcftools 1.24` pre-installed, removing the ~1 minute install step from
+  future launches. `launch_smoke_test.sh` gained an optional `--golden` flag to use it. Verified
+  by launching an instance with `--golden` and confirming `bcftools` runs immediately with no
+  install step, then terminated.
+
 ## 2026-09-03 — bcftools solved via micromamba; real BED-restricted fetch timing measured
 
 - **`scripts/aws/test_s3_fetch.sh` updated**: replaced the failed `dnf install bcftools` attempt

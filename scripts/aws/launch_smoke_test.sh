@@ -18,14 +18,21 @@
 #           --output text --region us-east-1 > ~/.ssh/trio-genome-aws.pem
 #       chmod 400 ~/.ssh/trio-genome-aws.pem
 #
-# Usage: ./scripts/aws/launch_smoke_test.sh <key-pair-name>
+# Usage: ./scripts/aws/launch_smoke_test.sh <key-pair-name> [--golden]
+#   --golden: use the pre-baked trio-genome-bcftools AMI (bcftools 1.24 via micromamba
+#     already installed, ami-020985bb7982d427b, built 2026-09-03) instead of resolving
+#     the latest stock Amazon Linux 2023 AMI. Saves the ~1 minute micromamba/bioconda
+#     install step on every launch -- worth it once bcftools is actually needed (Phase 2
+#     or repeated dev/test cycles), not for a plain mechanics smoke test.
 
 set -euo pipefail
 
 KEY_NAME="${1:?Usage: $0 <key-pair-name> -- the EC2 key pair to SSH in with}"
+GOLDEN="${2:-}"
 REGION="us-east-1"   # verified colocated with s3://1000genomes (x-amz-bucket-region header, 2026-09-02)
 INSTANCE_TYPE="c6i.xlarge"   # 4 vCPU -- smoke test scale, NOT the ~64 vCPU batch estimate
 SG_NAME="trio-genome-smoke-test"
+GOLDEN_AMI_ID="ami-020985bb7982d427b"   # trio-genome-bcftools-20260903, private to this account
 
 echo "==> Region: $REGION | Instance type: $INSTANCE_TYPE (smoke test, not the full batch)"
 
@@ -33,12 +40,18 @@ echo "==> Finding your current public IP (to scope SSH access to just you, not 0
 MY_IP="$(curl -fsS https://checkip.amazonaws.com)"
 echo "    $MY_IP"
 
-echo "==> Finding the latest Amazon Linux 2023 AMI (has python3 preinstalled)"
-AMI_ID="$(aws ec2 describe-images --region "$REGION" \
-    --owners amazon \
-    --filters "Name=name,Values=al2023-ami-*-x86_64" "Name=state,Values=available" \
-    --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)"
-echo "    $AMI_ID"
+if [ "$GOLDEN" = "--golden" ]; then
+    echo "==> Using the pre-baked trio-genome-bcftools AMI (bcftools already installed)"
+    AMI_ID="$GOLDEN_AMI_ID"
+    echo "    $AMI_ID"
+else
+    echo "==> Finding the latest Amazon Linux 2023 AMI (has python3 preinstalled)"
+    AMI_ID="$(aws ec2 describe-images --region "$REGION" \
+        --owners amazon \
+        --filters "Name=name,Values=al2023-ami-*-x86_64" "Name=state,Values=available" \
+        --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)"
+    echo "    $AMI_ID"
+fi
 
 echo "==> Creating security group (SSH from $MY_IP/32 only), if it doesn't already exist"
 SG_ID="$(aws ec2 describe-security-groups --region "$REGION" \

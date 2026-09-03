@@ -219,8 +219,9 @@ def process_individual(chrom, vcf_path, sample_id, salt, out_path, mode="iupac")
             md5 = cds.md5_digest(seq)
             sq = cds.ga4gh_sq_digest(seq)
             salted_md5 = cds.md5_digest(salt + seq) if salt else ""
+            salted_sq = cds.ga4gh_sq_digest(salt + seq) if salt else ""
             rows.append((entry["transcript_id"], entry["gene_id"], sample_id, "iupac",
-                         md5, sq, salted_md5, len(seq), het_count))
+                         md5, sq, salted_md5, salted_sq, len(seq), het_count))
         else:  # mode == "haplotypes"
             hap0, hap1, status = build_haplotypes(cds_seq, offsets)
             if status != "ok":
@@ -230,12 +231,14 @@ def process_individual(chrom, vcf_path, sample_id, salt, out_path, mode="iupac")
                 md5 = cds.md5_digest(hap_seq)
                 sq = cds.ga4gh_sq_digest(hap_seq)
                 salted_md5 = cds.md5_digest(salt + hap_seq) if salt else ""
+                salted_sq = cds.ga4gh_sq_digest(salt + hap_seq) if salt else ""
                 rows.append((entry["transcript_id"], entry["gene_id"], sample_id, hap_name,
-                             md5, sq, salted_md5, len(hap_seq), ""))
+                             md5, sq, salted_md5, salted_sq, len(hap_seq), ""))
     t3 = time.perf_counter()
 
     with gzip.open(out_path, "wt") as fh:
-        fh.write("transcript_id\tgene_id\tsample_id\thaplotype\thash_md5\thash_sq\tsalted_hash_md5\tlength\thet_count\n")
+        fh.write("transcript_id\tgene_id\tsample_id\trepresentation\thash_md5\thash_sq\t"
+                  "salted_hash_md5\tsalted_hash_sq\tlength\thet_count\n")
         for row in rows:
             fh.write("\t".join(str(x) for x in row) + "\n")
     t4 = time.perf_counter()
@@ -257,10 +260,19 @@ def main():
                      help="iupac (default, recommended for Track 2/ancestry, see HANDOFF.md) "
                           "or haplotypes (Track 1-style phased hap0/hap1, requires a phased VCF)")
     ap.add_argument("--salt", default=os.environ.get("HASH_SALT", ""),
-                     help="salt for salted_hash_md5 column; also read from HASH_SALT env var; "
-                          "omit both for unsalted-only output (salted_hash_md5 left empty)")
+                     help="salt for salted_hash_md5/salted_hash_sq columns; also read from "
+                          "HASH_SALT env var. Avoid this flag for a real salt -- it's visible to "
+                          "other users on the same machine via `ps aux`. Prefer --salt-file.")
+    ap.add_argument("--salt-file", default=None,
+                     help="path to a file containing only the salt (first line, trailing "
+                          "newline stripped). Safer than --salt: only the path appears in "
+                          "`ps aux`, never the value. Takes precedence over --salt/HASH_SALT.")
     args = ap.parse_args()
-    process_individual(args.chrom, args.vcf, args.sample_id, args.salt, args.out, args.mode)
+    salt = args.salt
+    if args.salt_file:
+        with open(args.salt_file) as fh:
+            salt = fh.readline().rstrip("\n")
+    process_individual(args.chrom, args.vcf, args.sample_id, salt, args.out, args.mode)
 
 
 if __name__ == "__main__":
