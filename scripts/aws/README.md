@@ -1,0 +1,72 @@
+# AWS batch-processing setup — runbook
+
+Two-phase plan, per this project's established "verify on a small sample before scaling"
+pattern: **Phase 1 (this runbook) is a smoke test on one small instance and one individual** —
+proving the pipeline actually works on real AWS infrastructure. Phase 2 (the full 1000 Genomes
+batch, ~$6–20 estimated) is separate, later, and needs its own explicit go-ahead — nothing here
+launches it.
+
+**None of this runs automatically.** Every script here creates or costs real, billable AWS
+resources when you run it — read a script before running it, not after.
+
+## Prerequisites
+
+1. **AWS credentials configured** — run `aws configure` yourself, directly in your own terminal
+   (not by pasting keys into a chat session). Use an IAM user scoped to EC2 + S3 read, not root
+   account credentials. Region: `us-east-1` — verified directly (not assumed) as where
+   `s3://1000genomes` actually lives (`x-amz-bucket-region: us-east-1` header, checked
+   2026-09-02).
+2. **An EC2 key pair**, if you don't already have one:
+   ```bash
+   aws ec2 create-key-pair --key-name trio-genome-aws --region us-east-1 \
+       --query 'KeyMaterial' --output text > ~/.ssh/trio-genome-aws.pem
+   chmod 400 ~/.ssh/trio-genome-aws.pem
+   ```
+
+## Phase 1 — smoke test
+
+```bash
+./scripts/aws/launch_smoke_test.sh trio-genome-aws
+# prints the instance's public IP once running
+
+./scripts/aws/deploy_and_test.sh <public-ip> trio-genome-aws
+# transfers the minimal file set (~92MB: 2 scripts + GENCODE reference + one real
+# individual's chr22 VCF), runs batch_haplotype_hash.py on the instance, pulls the
+# result back, and compares against the already-verified local hash for
+# ENST00000319363.11 (hash_md5=3bbd34fa..., het_count=5)
+
+./scripts/aws/terminate.sh
+# ALWAYS run this when done -- the instance costs money while running
+```
+
+What this validates: Python 3 + the actual hashing pipeline run correctly on real AWS Linux and
+reproduce byte-identical results to the Mac mini — extending this project's established
+cross-platform reproduction pattern (Windows/WSL2 → Mac mini, 2026-08-31) one hop further.
+
+What this does **not** yet test, deliberately deferred to keep this step small: fetching data
+directly from `s3://1000genomes` on the instance itself. That's the natural next check once this
+baseline passes — reuse the already-verified S3 URL and the BED-region-restriction technique
+from the impostor test (see `HANDOFF.md`), from the instance rather than the Mac mini, and
+confirm the *hosting* side of the cost/speed estimate too, not just the compute side.
+
+## Instance details (smoke test, not the batch estimate)
+
+- Region: `us-east-1` (colocated with the data, verified)
+- Instance type: `c6i.xlarge` (4 vCPU) — deliberately small for a first test, not the
+  `c6i.16xlarge` (64 vCPU) the Phase 2 cost estimate is based on
+- Pricing: spot (cheaper; a smoke test can tolerate interruption — nothing here has state to lose)
+- AMI: latest Amazon Linux 2023 (has Python 3 preinstalled; resolved dynamically by
+  `launch_smoke_test.sh`, not a hardcoded/stale AMI ID)
+- Security group: SSH (port 22) restricted to your current public IP only, not `0.0.0.0/0`
+- **No salt used in this smoke test** — it's testing the pipeline mechanics, not producing real
+  output. Recall from `HANDOFF.md`: `TodayI$Miercole$` was local-exploration only and must not
+  be reused for the real Phase 2 run either.
+
+## Phase 2 — the actual population-scale batch (not started, needs explicit go-ahead)
+
+Once Phase 1 passes: scale up the instance type, fetch each individual's chr22 CDS-region slice
+from `s3://1000genomes` (BED-restricted, per the impostor-test technique), run
+`batch_haplotype_hash.py` per individual (parallelized — GNU parallel or one process per core),
+generate a fresh salt (never the exploration one), pull results back, terminate. Cost/timing
+estimates already in `HANDOFF.md`; this needs its own explicit confirmation before running, same
+as Phase 1 did — a bigger instance running longer is a bigger, less reversible cost commitment.
