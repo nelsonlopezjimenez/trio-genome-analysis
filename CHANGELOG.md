@@ -9,6 +9,50 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-04 — Real file sizes checked; home-computer processing option identified
+
+- **Clarified how the per-individual processing loop actually works**, since the BED file's role
+  was easy to conflate with the script's internal logic: the BED file only matters for the fetch
+  stage (telling `bcftools` which byte-ranges to pull); `batch_haplotype_hash.py` never reads it
+  again once a VCF is local, instead re-deriving CDS coordinates from the GENCODE reference
+  catalog directly. The loop inside one run is over transcripts (one hash row per transcript),
+  not raw positions; "next individual" means a separate process invocation, not a loop iteration.
+- **Real file sizes checked via direct HTTP HEAD, not estimated**: chr22 full/unrestricted =
+  27.94 GB; chr1 (largest) = 139.95 GB, matching the "~130GB" figure already on record. Our
+  BED-restricted bulk chr22 file (CDS-only, all 2,504 samples) is 359MB — ~78x smaller.
+- **Mechanically confirmed why per-individual remote slicing costs more**: `-s <sample>` reduces
+  output size only, not the work needed — the joint VCF packs all samples into one line per site,
+  so reading even one sample means fetching/decompressing the whole line regardless. Direct
+  evidence already on record: 112x more output for the all-samples bulk fetch, in nearly the same
+  time as the single-sample fetch of identical regions.
+- **Home-computer processing identified as newly practical**, given the bulk-fetch numbers:
+  full unrestricted genome-wide data would be several terabytes (impractical at home), but the
+  CDS-restricted bulk files total only ~17.4GB genome-wide — tractable over ordinary home
+  internet. Once local, all remaining processing could run on a home machine at zero further AWS
+  cost, trading the AWS estimate's ~13 hours/~$35 for roughly 1.5–2 days on a typical desktop.
+  Not yet measured: actual bulk-fetch timing over a non-colocated home connection.
+- `HANDOFF.md` updated with all of the above.
+
+## 2026-09-03 — batch_haplotype_hash.py implements the bulk-fetch local-slice half
+
+- **`--bulk-vcf <path>`** added: slices `--sample-id` locally out of an already-local,
+  region-restricted, multi-sample VCF via `bcftools` (new `slice_individual_vcf()`, temp file
+  managed and auto-cleaned), instead of requiring an already single-sample `--vcf`. `--bcftools
+  <cmd>` allows overriding the invocation for environments where `bcftools` isn't on `PATH`
+  directly (e.g. the AWS golden AMI's micromamba-wrapped install).
+- **Verified with real data, not just inspected**: built a synthetic 3-sample VCF locally
+  (`bcftools merge` on the GIAB HG002/HG003/HG004 trio, already on disk), ran HG002 through both
+  `--vcf` (baseline) and `--bulk-vcf` (sliced from the synthetic file) — **byte-for-byte
+  identical output** for both `--mode iupac` (631 rows) and `--mode haplotypes` (1,112 rows).
+  Also verified the mutual-exclusivity argument guard and confirmed no leftover temp files after
+  processing.
+- **Not yet built**: the bulk fetch itself (the one-time, all-samples `bcftools view -R <bed>
+  <S3 URL>` step) isn't wrapped in any script yet — it was only run as a manual command during
+  the earlier timing test. `phase2_deploy.sh` doesn't orchestrate the full loop (bulk fetch, then
+  `batch_haplotype_hash.py --bulk-vcf` per individual) yet either — that remains the same
+  undesigned orchestration work flagged in the previous entry, now with a proven, tested building
+  block underneath it.
+
 ## 2026-09-03 — Bulk-fetch architecture tested: ~44x faster per individual, confirmed for real
 
 - **Tested the alternative flagged in the previous entry**: instead of each of 2,504 individuals
