@@ -9,6 +9,33 @@ Dates are pulled from `git log` where a commit exists for the work; entries pull
 
 ---
 
+## 2026-09-05 — Phasing checked directly; phantom-haplotype design question parked
+
+- **Checked the actual 1000 Genomes file this project uses for phasing information, not
+  assumed**: confirmed no population-based statistical phasing (`PS` field absent) — only GATK's
+  local, read-backed `PGT`/`PID` tags, which only resolve phase within a single sequencing
+  fragment (a few hundred bp), not across a whole multi-exon transcript. Empirically confirms the
+  earlier IUPAC-collapse design decision was correct for this specific data source. The older
+  1000 Genomes "Phase 3" (2015, SHAPEIT2-phased) release is a more likely candidate for genuine
+  population-scale phased data — not verified this session.
+- **Identified and parked a real design problem**: naively enumerating both alleles at every
+  heterozygous position to get an individual's protein sequence blows up combinatorially (2^N for
+  N heterozygous sites) and, more importantly, is a correctness problem, not just a scale one —
+  only 2 of those 2^N combinations are a diploid individual's real haplotypes, the rest are
+  phantoms indistinguishable from real ones without phase. Recommended default: only hash AA
+  sequences from directly-real data (genuinely phased haplotypes or fully homozygous
+  transcripts), not enumeration. If enumeration is ever pursued anyway, flagged that it needs an
+  explicit provenance/confidence column, not silent inclusion — a hash from one individual's
+  unconfirmed enumeration could later be corroborated by a different individual's directly
+  observed data, which the schema should be able to represent rather than conflate.
+- **`PROJECT_MAP.md`**: added a schema snapshot of both `hash_catalog.db` and
+  `individual_hash_catalog.db` as they stand today, deliberately recorded before any of the above
+  gets built, plus fixed a stale diagram box that still said Track 2 was "design only" despite
+  the IUPAC-hash catalog already being built and verified.
+- Session memory updated: the DNA-combinatorics insight saved 2026-09-04 now includes the
+  concrete mechanism (statistical phasing exploiting linkage disequilibrium) and the real
+  phasing-data check above.
+
 ## 2026-09-04 — Real file sizes checked; home-computer processing option identified
 
 - **Clarified how the per-individual processing loop actually works**, since the BED file's role

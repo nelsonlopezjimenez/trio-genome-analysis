@@ -128,15 +128,70 @@ data already in this repo, even though both are nominally "Ensembl."
                                                              │
                           ┌──────────────────────────────────┴──────────────────────────────────┐
                           │                                                                       │
-                          ▼  Track 1 — COMPLETE, kept as reference                                ▼  Track 2 — ACTIVE, design only so far
+                          ▼  Track 1 — COMPLETE, kept as reference                                ▼  Track 2 — ACTIVE, IUPAC-hash catalog built; MinHash/PCA not yet
            ┌───────────────────────────────┐                                       ┌───────────────────────────────────┐
-           │ notebook 04: overlay GIAB      │                                       │ Not yet built:                      │
-           │ HG002/3/4 chr22 VCFs onto the  │                                       │ Mash/sourmash MinHash distance vs.  │
-           │ catalog via per-site allele-   │                                       │ a 1000G/HGDP chr22 panel;           │
-           │ membership → 431 confident     │                                       │ coding-vs-genome-wide PCA demo      │
-           │ parent-of-origin calls         │                                       │ (see HANDOFF.md Track 2 for detail) │
-           └───────────────────────────────┘                                       └───────────────────────────────────┘
+           │ notebook 04: overlay GIAB      │                                       │ scripts/batch_haplotype_hash.py:    │
+           │ HG002/3/4 chr22 VCFs onto the  │                                       │ per-individual IUPAC-collapsed CDS  │
+           │ catalog via per-site allele-   │                                       │ hashes -> individual_hash_catalog.db│
+           │ membership → 431 confident     │                                       │ (AWS batch tooling built/verified,  │
+           │ parent-of-origin calls         │                                       │ Phase 2 batch run itself pending)   │
+           └───────────────────────────────┘                                       │ Still not built: Mash/sourmash      │
+                                                                                     │ MinHash distance vs. 1000G/HGDP,    │
+                                                                                     │ coding-vs-genome-wide PCA demo       │
+                                                                                     │ (see HANDOFF.md Track 2 for detail)  │
+                                                                                     └───────────────────────────────────┘
 ```
+
+---
+
+## Schema snapshot — as of 2026-09-05, before any new fields
+
+Recorded here deliberately *before* adding anything discussed on 2026-09-04/05 (protein/AA
+hashes, a salted AA hash, a phase/provenance-confidence column) — so there's a clean "before"
+reference to diff against once those land.
+
+**`hash_catalog.db`** (reference-only, unsalted, no individual data — chr22 POC):
+```sql
+CREATE TABLE sequences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash_md5 TEXT NOT NULL,
+    hash_sq TEXT NOT NULL,
+    seq_type TEXT NOT NULL CHECK(seq_type IN ('AA','CDS','cDNA','exon')),
+    accession TEXT NOT NULL,
+    gene_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    release TEXT NOT NULL,
+    evidence TEXT,
+    length INTEGER NOT NULL,
+    low_complexity_frac REAL
+)
+```
+16,176 rows currently (1,341 AA + 1,341 CDS + 13,494 exon hashes, chr22 only). Already covers AA
+and per-exon granularity — but only for the *reference* sequence, never an individual's variant
+data.
+
+**`individual_hash_catalog.db`** (per-individual, built 2026-09-03, not yet populated with real
+Phase 2 data):
+```sql
+CREATE TABLE individual_hashes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    transcript_id   TEXT NOT NULL,
+    gene_id         TEXT NOT NULL,
+    sample_id       TEXT NOT NULL,
+    representation  TEXT NOT NULL,   -- 'iupac' | 'hap0' | 'hap1'
+    hash_md5        TEXT NOT NULL,   -- unsalted, whole-CDS only -- no AA, no per-exon
+    hash_sq         TEXT NOT NULL,
+    salted_hash_md5 TEXT,
+    salted_hash_sq  TEXT,
+    length          INTEGER NOT NULL,
+    het_count       INTEGER,
+    salt_label      TEXT,
+    UNIQUE(transcript_id, sample_id, representation)
+)
+```
+Whole-CDS only — no AA-level row, no per-exon row, and no column yet distinguishing "real,
+directly-observed sequence" from any future enumerated/hypothetical resolution (relevant to the
+2026-09-05 phantom-haplotype discussion below).
 
 ---
 

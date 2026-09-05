@@ -1,6 +1,6 @@
 # Handoff — Trio Genome Analysis
 
-**Last updated: 2026-09-04**
+**Last updated: 2026-09-05**
 
 This is the one living document for current project state. For dated history, see
 [`CHANGELOG.md`](CHANGELOG.md) (append-only, newest first). This file gets edited in place —
@@ -1060,6 +1060,43 @@ answered in depth yet, per explicit request to park them.
    note on batch orchestration above), not sequence-level hashing, so switching to AA wouldn't
    address today's actual bottleneck at that layer either. Worth measuring directly rather than
    assuming either way before deciding whether this is worth pursuing.
+10. **Per-individual AA (protein) hashing for `--mode iupac` is blocked on a real design question,
+    not a cost question — raised 2026-09-04/05.** `--mode haplotypes`'s `hap0`/`hap1` are already
+    fully-resolved ACGT sequences and translate/hash trivially; `--mode iupac`'s ambiguity codes
+    (R/Y/S/W/K/M) aren't valid codon-table input, so "the individual's protein sequence" isn't
+    well-defined wherever `het_count > 0`. **Enumerating both alleles at every heterozygous
+    position is the wrong fix, not just an expensive one**: a transcript with *N* heterozygous
+    sites has 2^N possible resolutions, but a diploid individual only has 2 real haplotypes
+    through it — the other 2^N − 2 are phantoms, indistinguishable from the real 2 without phase.
+    **Checked directly, not assumed (2026-09-05)**: the 1000 Genomes high-coverage file this
+    project uses has **no population-based phasing at all** (no `PS` field) — only GATK's local,
+    read-backed `PGT`/`PID` tags, which only resolve phase within a single sequencing fragment (a
+    few hundred bp), nowhere near enough to phase a whole multi-exon transcript. The older 1000
+    Genomes "Phase 3" (2015) release is a more likely candidate for genuine population-scale
+    phased data (SHAPEIT2-phased) — not verified this session. Real, standard tools exist for
+    this exact problem (SHAPEIT2/Eagle2/Beagle) — they work because linkage disequilibrium means
+    the *real* haplotype space at a set of linked positions is far smaller than 2^N, and these
+    tools infer phase for unphased individuals by finding which 2 haplotypes, drawn from the
+    common combinations observed across a large reference panel, best explain the genotype. If
+    phased population data is ever genuinely needed, running one of these established tools is
+    the right move — not a custom-built combinatorial-restriction method.
+    **Recommended default, pending any of the above**: only hash AA sequences from data that's
+    directly real — phased haplotypes (when genuinely available) or fully homozygous transcripts
+    (`het_count == 0`, no ambiguity at all) — zero phantom risk, by construction, using only
+    already-available raw data. Not yet built.
+11. **If enumeration is ever deliberately pursued anyway (exploratory "what's theoretically
+    consistent with this genotype," not a default) — it needs a provenance/confidence column,
+    not silent inclusion.** Raised 2026-09-05: the catalog stores only hashes, not sequences, so
+    an enumerated/unconfirmed hash isn't *wrong* data — the risk is purely interpretive: without
+    a marker distinguishing directly-observed hashes from theoretical ones, a later consumer could
+    mistake a phantom for a confirmed observation. Worth noting the sharper point behind this:
+    "phantom relative to one individual's unphased data" doesn't mean "impossible" — a real
+    haplotype elsewhere in the population could independently produce the exact same hash from
+    some *other* individual's directly-observed (phased or homozygous) data, which would then
+    corroborate it after the fact. A `resolution_type` column (`'observed'` vs
+    `'enumerated_unconfirmed'`) would let the catalog support this kind of accumulating,
+    self-correcting evidence instead of conflating confirmed and hypothetical rows. Not yet
+    built, not needed unless/until enumeration itself is actually pursued.
 
 ### Key literature
 - Ondov et al. 2016, *Mash* (Genome Biology). Brown & Irber 2016, *sourmash* (JOSS).
